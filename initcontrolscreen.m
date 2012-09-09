@@ -125,7 +125,7 @@ if procnum == 1, %create window
     
     %screen replica
     subplot('position', [cp3size/(xs+cpsize+cp3size) cp2size/(ys+cp2size+cp4size) xs/(xs+cpsize+cp3size) ys/(ys+cp2size+cp4size)]);
-    replicacol = [get(findobj('tag','bgred'),'userdata') get(findobj('tag','bggreen'),'userdata') get(findobj('tag','bgblue'),'userdata')];
+    replicacol = [0 0 0];
     set(gca, 'color', replicacol, 'xlim', [-hxd hxd], 'ylim', [-hyd hyd], 'nextplot', 'add', 'xtick', [], 'ytick', [], 'drawmode', 'fast', 'tag', 'replica');
 
     if MLConfig.ControlScreenGridCartesian,

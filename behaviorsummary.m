@@ -316,7 +316,8 @@ else
                     figure(ffig);
                 end
                 hax = axes;
-                set(hax, 'nextplot', 'add', 'box', 'on', 'color', [0 0 0], 'xlim', xlim, 'ylim', ylim, 'xtick', [], 'ytick', [], 'position', [0 0 1 1]);
+                sbgc = bhv.ScreenBackgroundColor;
+                set(hax, 'nextplot', 'add', 'box', 'on', 'color', sbgc, 'xlim', xlim, 'ylim', ylim, 'xtick', [], 'ytick', [], 'position', [0 0 1 1]);
                 hobject = copyobj(hlist, hax);
                 %                 het = findobj(gcf, 'tag', 'elapsedtime');
             end

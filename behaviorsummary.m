@@ -13,7 +13,13 @@ function behaviorsummary(varargin)
 % Modified 9/13/08 -WA (fixed aspect ratio problem with wide-screen
 % displays)
 
-localcallback = ~isempty(gcbo) && (ismember(gcbo, get(gcf, 'children')) || ismember(gcbo, get(gca, 'children')));
+f = findobj('tag', 'BehaviorSummary');
+localcallback = 0;
+if ~isempty(f),
+    figure(f);
+    localcallback = ~isempty(gcbo) && (ismember(gcbo, get(gcf, 'children')) || ismember(gcbo, get(gca, 'children')));
+end
+
 if ~localcallback,
     if ~ispref('MonkeyLogic', 'Directories'),
         success = set_ml_directories;
@@ -67,7 +73,7 @@ if ~localcallback,
     xleft = (scrnsz(3)-xfig)/2;
     yfig = 750;
     ybottom = (scrnsz(4)-yfig)/2;
-    set(gcf, 'color', figbg, 'position', [xleft ybottom xfig yfig], 'numbertitle', 'off', 'name', 'Behavior Summary', 'menubar', 'none', 'userdata', bhv);
+    set(gcf, 'color', figbg, 'position', [xleft ybottom xfig yfig], 'numbertitle', 'off', 'name', 'Behavior Summary', 'menubar', 'none', 'userdata', bhv, 'tag', 'BehaviorSummary');
 
     embedded_behaviorgraph(bhv);
 
@@ -316,8 +322,7 @@ else
                     figure(ffig);
                 end
                 hax = axes;
-                sbgc = bhv.ScreenBackgroundColor;
-                set(hax, 'nextplot', 'add', 'box', 'on', 'color', sbgc, 'xlim', xlim, 'ylim', ylim, 'xtick', [], 'ytick', [], 'position', [0 0 1 1]);
+                set(hax, 'nextplot', 'add', 'box', 'on', 'color', [0 0 0], 'xlim', xlim, 'ylim', ylim, 'xtick', [], 'ytick', [], 'position', [0 0 1 1]);
                 hobject = copyobj(hlist, hax);
                 %                 het = findobj(gcf, 'tag', 'elapsedtime');
             end

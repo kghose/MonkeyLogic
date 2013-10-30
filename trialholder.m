@@ -14,9 +14,13 @@ global SIMULATION_MODE
 % modified 7/25/08 -WA (now saves absolute trial start time)
 % modified 8/10/08 -WA (joystick cursor now properly centered)
 % modified 8/24/08 -MS & WA (movie presentation & translation added)
-% - several undocumented modifications -
+% - several undocumented modifications during this stretch of time -
 % modified 5/01/12 -WA (to fix bugs visualizing joystick cursor)
 % modified 5/07/12 -WA (to allow use of multiple "tic" commands, using ticID syntax)
+% modified 10/2/12 -DF (to fix bug that caused first movie frame to be
+% displayed twice)
+% modified 3/18/13 -DF (set_object_path bug fix)
+% modified 3/28/13 -DF (ttl buf fix/ modify/improve toggleobject)
 
 Codes = []; %#ok<NASGU>
 rt = NaN; %#ok<NASGU>
@@ -70,10 +74,10 @@ elseif trialtype == 1, %initialization trial
     user_warning('off');
     mov = 1;
     t = (1000*TaskObject(mov).NumFrames/ScreenInfo.RefreshRate) - 50;
-    toggleobject(mov,'eventmarker',13);
+    toggleobject(mov);
     goodmonkey(-2); %will test output only if reward line exists
     idle(t);
-    toggleobject(mov,'eventmarker',14);
+    toggleobject(mov);
     end_trial;
     return
 elseif trialtype == 2, %benchmark trial
@@ -116,10 +120,17 @@ hotkey('space', 'simulation_positions(2,5,-Inf);');
 hotkey('bksp', 'simulation_positions(2,5,Inf);');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-Info = TrialRecord.CurrentConditionInfo;       %#ok<NASGU>
-GenInfo = TrialRecord.CurrentConditionGenInfo; %#ok<NASGU>
+if isfield(TrialRecord, 'CurrentConditionInfo')
+	Info = TrialRecord.CurrentConditionInfo;       %#ok<NASGU>
+else
+	Info = []; %#ok<NASGU>
+end
+if isfield(TrialRecord, 'CurrentConditionStimulusInfo')
+	StimulusInfo = TrialRecord.CurrentConditionStimulusInfo; %#ok<NASGU>
+else
+	StimulusInfo = []; %#ok<NASGU>
+end
 user_text('');
-
 try
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %INSERT TRIAL POINT********************************************************
@@ -146,9 +157,9 @@ end
 
 return
 
+%%
 function [tflip, framenumber] = toggleobject(stimuli, varargin)
 persistent TrialObject ScreenData DAQ togglecount ObjectStatusRecord yrasterthresh ltb lastframe activemovies % %taken from TaskObject & ScreenInfo
-
 tflip = [];
 framenumber = [];
 movie_advance_only = 0;
@@ -165,46 +176,48 @@ if stimuli == -1, %initialize
     ltb = length(TrialObject);
     togglecount = 0;
     ObjectStatusRecord = [];
-    yrasterthresh = floor(0.8*ScreenData.Ysize);
+    yrasterthresh = floor(0.9*ScreenData.Ysize);
     lastframe = 0;
     activemovies = false(ltb, 1);
     return
 elseif stimuli == -2, %trial exit data
     tflip = ObjectStatusRecord;
     return
-elseif stimuli == -3, %call from reposition_object or set_object_path
+elseif stimuli == -3, %call from reposition_object or set_object_path or eyejoytrack(-7)
     stimnum = varargin{1};
-    TrialObject(stimnum) = varargin{2};
+	status = TrialObject(stimnum).Status;
+	TrialObject(stimnum) = varargin{2};
+	TrialObject(stimnum).Status = status;
     statrec = double(cat(1, TrialObject.Status));
-    if varargin{3}, %called from reposition_object, not set_object_path
+    if varargin{3}, %called from reposition_object, not set_object_path or eyejoytrack(-7)
         togglecount = togglecount + 1;
         statrec(stimnum) = 2;
         ObjectStatusRecord(togglecount).Time = round(trialtime);
         ObjectStatusRecord(togglecount).Status = statrec;
         ObjectStatusRecord(togglecount).Data{1} = [TrialObject(stimnum).XPos TrialObject(stimnum).YPos];
-        if TrialObject(stimnum).Status,
-            toggleobject([stimnum stimnum], 'fast');
+        if TrialObject(stimnum).Status
+            toggleobject([stimnum stimnum], 'drawmode', 'fast');
         end
     end
     return
 elseif stimuli == -4, %update movies and/or subject's cursor only
     movie_advance_only = 1;
-    if ~isempty(varargin),
+	if ~isempty(varargin),
         cursorpos = varargin{1};
         update_cursor = 1;
-    end
+	end
 elseif stimuli == -5, %turn off all TrialObjects with status.  Called when trial is aborted.
-    for i = ltb:-1:1,
-        ob = TrialObject(i);
-        if ob.Status,
-            toggleobject(i);
-        end
+    ob = TrialObject(1:ltb);
+    ob = [ob.Status];
+    f = find(ob);
+    if ~isempty(f),
+        toggleobject(f);
     end
     return;
 end
 
 fastdraw = 0; %will draw to subject screen but not control screen if == 1
-behavioralcode = 0;
+behavioralcode = [];
 statselect = 0;
 setstartframe = 0;
 setstartposition = 0;
@@ -236,9 +249,7 @@ if ~isempty(varargin) && ~movie_advance_only,
                 TrialObject(stimuli(i)).Status = statval;
             end
         elseif strcmpi(v, 'drawmode'),
-            if ischar(a) && strcmpi(a, 'fast'),
-                fastdraw = 1;
-            elseif ~ischar(a) && a,
+            if (ischar(a) && strcmpi(a, 'fast')) || (~ischar(a) && a),
                 fastdraw = 1;
             end
         elseif strcmpi(v, 'eventmarker'),
@@ -250,52 +261,76 @@ if ~isempty(varargin) && ~movie_advance_only,
             if ischar(a) || iscell(a),
                 error('Value for <Toggleobject: MovieStartFrame> must be numeric');
             end
-            if length(a) == 1 || length(a) == length(stimuli),
-                [TrialObject(stimuli).StartFrame] = deal(a);
+            if length(a) == 1
+				for i = stimuli
+					TrialObject(i).StartFrame = a;
+				end
+			elseif length(a) == length(stimuli)
+				for i = length(stimuli)
+					TrialObject(stimuli(i)).StartFrame = a(i);
+				end
             else
                 error('Number of values for <ToggleObject: MovieStartFrame> must be equal to the number of specified stimuli, or scalar');
             end
             setstartframe = 1;
         elseif strcmpi(v, 'moviestep'),
-            if ischar(a) || iscell(a),
+			if ischar(a) || iscell(a),
                 error('Value for <Toggleobject: MovieStep> must be numeric');
-            end
-            if length(a) == 1 || length(a) == length(stimuli),
-                [TrialObject(stimuli).FrameStep] = deal(a);
-                if ~setstartframe && any(a < 0),
-                    stimsubset = stimuli(a < 0);
-                    for i = 1:length(stimsubset),
-                        TrialObject(stimsubset(i)).StartFrame = TrialObject(stimsubset(i)).NumFrames; %start playing backwards from last frame
-                    end
-                end
+			end
+			if length(a) == 1
+				for i = stimuli
+					TrialObject(i).FrameStep = a;
+				end
+			elseif length(a) == length(stimuli)
+				for i = length(stimuli)
+					TrialObject(stimuli(i)).FrameStep = a(i);
+				end
             else
                 error('Number of values for <ToggleObject: MovieStep> must be equal to the number of specified stimuli, or scalar');
-            end
+			end
+			if ~setstartframe && any(a < 0),
+				stimsubset = stimuli(a < 0);
+				for i = 1:length(stimsubset),
+					TrialObject(stimsubset(i)).StartFrame = TrialObject(stimsubset(i)).NumFrames; %start playing backwards from last frame
+				end
+			end
         elseif strcmpi(v, 'startposition'),
             if ischar(a) || iscell(a),
                 error('Value for <Toggleobject: StartPosition> must be numeric');
             end
-            if length(a) == 1 || length(a) == length(stimuli),
-                [TrialObject(stimuli).StartPosition] = deal(a);
+            if length(a) == 1
+				for i = stimuli
+					TrialObject(i).StartPosition = a;
+				end
+			elseif length(a) == length(stimuli)
+				for i = length(stimuli)
+					TrialObject(stimuli(i)).StartPosition = a(i);
+				end
             else
                 error('Number of values for <ToggleObject: StartPosition> must be equal to the number of specified stimuli, or scalar');
             end
             setstartposition = 1;
         elseif strcmpi(v, 'positionstep'),
-            if ischar(a) || iscell(a),
+			if ischar(a) || iscell(a),
                 error('Value for <Toggleobject: PositionStep> must be numeric');
-            end
-            if length(a) == 1 || length(a) == length(stimuli),
-                [TrialObject(stimuli).PositionStep] = deal(a);
-                if ~setstartposition && any(a < 0),
-                    stimsubset = stimuli(a < 0);
-                    for i = 1:length(stimsubset),
-                        TrialObject(stimsubset(i)).StartPosition = TrialObject(stimsubset(i)).NumPositions; %start translating backwards from last position
-                    end
-                end
+			end
+			if length(a) == 1
+				for i = 1 : stimuli
+					TrialObject(i).PositionStep = a;
+				end
+			elseif length(a) == length(stimuli)
+				for i = length(stimuli)
+					TrialObject(stimuli(i)).PositionStep = a(i);
+				end
             else
                 error('Number of values for <ToggleObject: PositionStep> must be equal to the number of specified stimuli, or scalar');
-            end
+			end
+			if ~setstartposition && any(a < 0),
+				stimsubset = stimuli(a < 0);
+				for i = 1:length(stimsubset),
+					TrialObject(stimsubset(i)).StartPosition = TrialObject(stimsubset(i)).NumPositions; %start translating backwards from last position
+				end
+			end
         else
             error('Unrecognized option "%s" calling ToggleObject', v);
         end
@@ -322,43 +357,64 @@ while currentframe == lastframe, %to avoid queueing flips in the same frame
     [t currentframe] = trialtime;
 end
 
-for i = ltb:-1:1,
-    ob = TrialObject(i);
+videochange = 0;
+
+if stimuli == -4
+	stimuli_fortoggle = find([TrialObject.Status] ~= 0);
+else
+	stimuli_fortoggle = union(stimuli, find([TrialObject.Status] ~= 0));
+end
+stimuli_fortoggle = fliplr(stimuli_fortoggle);
+
+for i = stimuli_fortoggle,
+	ob = TrialObject(i);
     if ob.Status,
         if ob.Modality == 1, %static video object
             mlvideo('blit', ScreenData.Device, ob.Buffer, ob.XsPos, ob.YsPos, ob.Xsize, ob.Ysize);
+            videochange = 1;
         elseif ob.Modality == 2, %movie
-            if ~movie_advance_only && ~activemovies(i), % initialize movie
+            if ~movie_advance_only && ~activemovies(i) && ~ob.Used, % initialize movie
                 ob.Status = ob.StartFrame;
                 ob.CurrentPosition = ob.StartPosition;
                 initmovies(i) = 1;
+				ob.Used = 1;
+				ob.CurrFrame = ob.InitFrame;
             else %advance frame(s) and / or position(s)
-                if currentframe - lastframe > 1,
-                    eventmarker(200);
+				if currentframe - lastframe > 1,
+                    eventmarker(13);
                     fprintf('Warning: skipped %i frame(s) of %s at %3.1f ms\n', (currentframe - lastframe - 1), ob.Name, trialtime);
                     user_warning('Skipped %i frame(s) of %s at %3.1f ms', (currentframe - lastframe - 1), ob.Name, trialtime);
-                end
-                indx = round(ob.FrameStep*(currentframe - ob.InitFrame)) + ob.StartFrame -1;
+				end
+				
+				if ~activemovies(i)			%This is for when an object is toggled back on after being toggled off in one trial
+					activemovies(i) = 1;
+				end
+				
+                indx = round(ob.FrameStep*(currentframe - ob.InitFrame)) + ob.StartFrame;
                 modulus = max(length(ob.FrameOrder),ob.NumFrames);
                 indx = mod(indx, modulus) + 1;
                 
-                if ~isempty(ob.FrameEvents),
+				if ~isempty(ob.FrameEvents),
                     f_list = ob.FrameEvents(1,:);
                     e_list = ob.FrameEvents(2,:);
                     f = find(f_list == indx);
                     if ~isempty(f),
                         behavioralcode = e_list(f(1));
                     end
-                end
+				end
                 
-                if indx > length(ob.FrameOrder),
+				if indx > length(ob.FrameOrder),
                     ob.Status = indx;
                 else
                     ob.Status = ob.FrameOrder(indx);
-                end
-                ob.Status = mod(ob.Status, ob.NumFrames) + 1;
-                indx = round(ob.PositionStep*(currentframe - ob.InitFrame)) + ob.StartPosition;
-                ob.CurrentPosition = mod(indx, ob.NumPositions) + 1;
+				end
+				
+				
+				ob.Status = mod(ob.Status, ob.NumFrames) + 1;
+				ob.CurrFrame = ob.CurrFrame + (currentframe - lastframe) * ob.PositionStep;
+				indx = round(ob.CurrFrame - ob.InitFrame) + ob.StartPosition;
+				ob.CurrentPosition = mod(indx, ob.NumPositions) + 1;
+				
             end
             mlvideo('blit', ScreenData.Device, ob.Buffer(ob.Status), ob.XsPos(ob.CurrentPosition), ob.YsPos(ob.CurrentPosition), ob.Xsize, ob.Ysize);
             TrialObject(i) = ob; %update persistent TrialObject array
@@ -366,6 +422,7 @@ for i = ltb:-1:1,
             xpos = ob.XPos(ob.CurrentPosition);
             ypos = ob.YPos(ob.CurrentPosition);
             posarray(i, 1:2) = [xpos ypos];
+            videochange = 1;
         elseif ob.Modality == 3 && ~movie_advance_only, % sound
             play(ob.PlayerObject);
             TrialObject(i).Status = 0;
@@ -387,25 +444,30 @@ for i = ltb:-1:1,
 end
 
 %PhotoDiode
-if ScreenData.PhotoDiode > 1,
-    pdflip = any(cat(1, TrialObject.Modality) < 3);
-    if pdflip,
-        if ~ScreenData.PdStatus,
-            mlvideo('blit', ScreenData.Device, ScreenData.PdBuffer, ScreenData.PdX, ScreenData.PdY, ScreenData.PdXsize, ScreenData.PdYsize);
-            ScreenData.PdStatus = 1;
-        else
-            ScreenData.PdStatus = 0;
-        end
+if ScreenData.PhotoDiode > 1 && videochange && ~update_cursor,
+    if ~ScreenData.PdStatus,
+        mlvideo('blit', ScreenData.Device, ScreenData.PdBuffer, ScreenData.PdX, ScreenData.PdY, ScreenData.PdXsize, ScreenData.PdYsize);
+        ScreenData.PdStatus = 1;
+    else
+        mlvideo('blit', ScreenData.Device, ScreenData.PdBufferBlack, ScreenData.PdX, ScreenData.PdY, ScreenData.PdXsize, ScreenData.PdYsize);
+        ScreenData.PdStatus = 0;
     end
 end
 
 %Subject's Joystick Cursor
 if update_cursor,
     mlvideo('blit', ScreenData.Device, ScreenData.CursorBuffer, cursorpos(1), cursorpos(2), ScreenData.CursorXsize, ScreenData.CursorYsize);
+    if ScreenData.PhotoDiode > 1, %keep current photodiode trigger on-screen (so doesn't flash with cursor)
+        if ~ScreenData.PdStatus,
+            mlvideo('blit', ScreenData.Device, ScreenData.PdBufferBlack, ScreenData.PdX, ScreenData.PdY, ScreenData.PdXsize, ScreenData.PdYsize);
+        else
+            mlvideo('blit', ScreenData.Device, ScreenData.PdBuffer, ScreenData.PdX, ScreenData.PdY, ScreenData.PdXsize, ScreenData.PdYsize);
+        end
+    end
 end
 
 % FLIP SCREEN
-if behavioralcode, %syncs the code with the screen flip
+if ~isempty(behavioralcode), %syncs the code with the screen flip
     mlvideo('waitflip', ScreenData.Device, yrasterthresh);
     [tflip framenumber] = trialtime;
     while ~mlvideo('verticalblank', ScreenData.Device), end
@@ -424,12 +486,14 @@ end
 
 %movie record-keeping
 if any(initmovies),
-    [TrialObject(initmovies).InitFrame] = deal(framenumber);
+	for i = (find(initmovies))'
+		TrialObject(i).InitFrame = framenumber;
+	end
     activemovies = activemovies | initmovies;
 end
 
 %update ObjectStatusRecord (used to play-back trials from BHV file)
-if stimuli(1),
+if stimuli(1) && togglecount > 0,
     ObjectStatusRecord(togglecount).Time = round(trialtime);
     statrec = cat(1, TrialObject.Status);
     if any(activemovies),
@@ -501,12 +565,11 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function Codes = eventmarker(codenumber, varargin)
-persistent numcodes CodeNumbers CodeTimes DaqDIO digoutflag z databits strobebit sbval numdatabits target
+persistent numcodes CodeNumbers CodeTimes DaqDIO digoutflag z databits strobebit sbval numdatabits
 
 tstamp = round(trialtime);
 
 if codenumber == -1, %set trial-start time
-    target = 3;
     numcodes = 0;
     maxcodes = 4096;
     CodeNumbers = zeros(maxcodes, 1);
@@ -532,31 +595,11 @@ elseif codenumber == -2, %return codes at end of trial
     return
 elseif any(codenumber ~= floor(codenumber)),
     error('Eventmarker value must be a positive integer');
-elseif strcmpi(codenumber,'default'),
-    target = 3;
-elseif strcmpi(codenumber,'explicit'),
-    target = 0;
-elseif strcmpi(codenumber,'bhv'),
-    target = 1;
-elseif strcmpi(codenumber,'strobe'),
-    target = 2;
-end
-
-if ~isempty(varargin),
-    codeflags = varargin{1};
-else
-    if target == 0,
-        return
-    end
-    codeflags = 3*ones(1,length(codenumber));
-end
-if target ~= 0,
-    codeflags = bitand(codeflags,target);
 end
 
 for i = 1:length(codenumber),
     % Output codenumber on digital port
-    if digoutflag && bitand(codeflags(i),2),
+    if digoutflag,
         bvec = dec2binvec(codenumber(i), numdatabits);
         if length(bvec) > numdatabits,
             error('Too few digital lines (%i) allocated for event marker value %i', numdatabits, codenumber);
@@ -568,11 +611,9 @@ for i = 1:length(codenumber),
     end
 
     % store codes in array to be saved to disk on local machine
-    if bitand(codeflags(i),1),
-        numcodes = numcodes + 1;
-        CodeNumbers(numcodes) = codenumber;
-        CodeTimes(numcodes) = tstamp;
-    end
+    numcodes = numcodes + 1;
+    CodeNumbers(numcodes) = codenumber(i);
+    CodeTimes(numcodes) = tstamp;
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -581,7 +622,7 @@ global SIMULATION_MODE
 persistent TrialObject DAQ AI ScreenData eTform jTform ControlObject totalsamples ejt_totaltime min_cyclerate...
     joyx joyy eyex eyey joypresent eyepresent eyetarget_index eyetarget_record ...
     buttonspresent analogbuttons buttonnumber buttonx buttonsdio ...
-    lastframe benchmark benchdata benchcount benchdata2 benchcount2 benchmax %#ok<PUSE>
+    lastframe benchmark benchdata benchcount benchdata2 benchcount2 benchmax
 
 t1 = trialtime;
 ontarget = 0;
@@ -719,7 +760,6 @@ joystatus = 0;
 bstatus = 0;
 eyefirst = 0;
 joyfirst = 0;
-%buttonfirst = 0; %only need if can have fxn3... which one can't for now.
 
 idle = 0;
 if strcmp(fxn1, 'idle'),
@@ -734,9 +774,9 @@ if strcmp(fxn1, 'idle'),
 else
     tob1 = varargin{1};
     trad1 = varargin{2};
-    if length(trad1) < length(tob1),
+	if length(trad1) < length(tob1),
         trad1 = trad1 * ones(size(tob1));
-    end
+	end
     maxtime = varargin{3};
     if strcmpi(fxn1, 'acquirefix'),
         eyetrack = 1;
@@ -883,11 +923,11 @@ end
 moviesplaying = any(cat(1, TrialObject.Status) & cat(1, TrialObject.Modality) == 2);
 yesshowcursor = ScreenData.ShowCursor;
 if moviesplaying || yesshowcursor,
-    videoupdates = 1;
-    drawnowok = 0;
+	videoupdates = 1;
+	drawnowok = 0;
 else
-    videoupdates = 0;
-    drawnowok = 1;
+	videoupdates = 0;
+	drawnowok = 1;
 end
 
 %create button indicators
@@ -984,10 +1024,10 @@ t2 = trialtime - t1;
 
 while t2 < maxtime,
     totalsamples = totalsamples + 1;
-    if ~isempty(AI),
+	if ~isempty(AI),
         data = getsample(AI);
-    end
-    if eyepresent,
+	end
+	if eyepresent,
         if SIMULATION_MODE,
             sim_vals = simulation_positions(0);
             xp_eye = sim_vals(3);
@@ -1011,9 +1051,9 @@ while t2 < maxtime,
                 eyestatus = eye_dist <= eyerad;
             end
         end
-    end
+	end
     
-    if joypresent,
+	if joypresent,
         if SIMULATION_MODE,
             sim_vals = simulation_positions(0);
             xp_joy = sim_vals(1);
@@ -1034,9 +1074,9 @@ while t2 < maxtime,
                 joystatus = joy_dist <= joyrad;
             end
         end
-    end
+	end
     
-    if any(buttonspresent),
+	if any(buttonspresent),
         if analogbuttons,
             allbvals = data(buttonx);
         else
@@ -1059,12 +1099,13 @@ while t2 < maxtime,
                 bstatus = bval > bthresh;
             end
         end
-    end
-
+	end
+	
     if any(eyestatus) || any(joystatus) || any(bstatus),
         t = trialtime - t1;
         rt = round(t);
         t2 = maxtime;
+        earlybreak = 1;
         if eyetrack,
             etargetnumber = find(eyestatus);
             eyestatus = any(eyestatus);
@@ -1119,7 +1160,6 @@ while t2 < maxtime,
                 end
             end
         end
-        earlybreak = 1;
     else
         [t currentframe] = trialtime;
         if benchmark,
@@ -1516,11 +1556,13 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function varargout = goodmonkey(duration, varargin)
-persistent DAQ rewardtype reward_on reward_off noreward rewardsgiven rewardstart rewardend reward_dur rewardpolarity rewardindex
+persistent DAQ rewardtype reward_on reward_off noreward rewardsgiven rewardstart rewardend reward_dur rewardpolarity rewardindex pausetime triggerval
 
 if duration == -1,
     DAQ = varargin{1};
     noreward = 0;
+    pausetime = 40;
+    triggerval = 5;
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% REWARD
     loadbutton = findobj('tag', 'loadbutton');
     VV = get(loadbutton, 'userdata');
@@ -1596,17 +1638,17 @@ if isempty(varargin),
 else
     numreward = 1;
     pausetime = 0;
-    for i = 1:2:length(varargin)
-        switch(varargin{i})
-            case 'num_reward'
-                numreward = varargin{i+1};
-                pausetime = 40;
-            case 'pause_time'
-                pausetime = varargin{i+1};
-            case 'trigger_val'
-                triggerval = varargin{i+1};
-            otherwise
-                error('Unrecognized parameter passed to goodmonkey: valid parameters are ''num_reward'', ''pause_time'' and ''trigger_val''');
+    for i = 1:2:length(varargin),
+        prm = varargin{i};
+        val = varargin{i+1};
+        if strcmpi(prm, 'NumReward'),
+            numreward = val;
+        elseif strcmpi(prm, 'PauseTime'),
+            pausetime = val;
+        elseif strcmpi(prm, 'TriggerVal'),
+            triggerval = val;
+        else
+            error('Unrecognized parameter passed to goodmonkey: valid parameters are ''NumReward'', ''PauseTime'' and ''TriggerVal''');
         end
     end
     reward_on(rewardindex) = triggerval*rewardpolarity;
@@ -1723,7 +1765,7 @@ yoffset = round(TO.Ysize)/2;
 TO.XsPos = hxs + round(ScreenData.PixelsPerDegree * xpath) - xoffset;
 TO.YsPos = hys - round(ScreenData.PixelsPerDegree * ypath) - yoffset; %invert so that positive y is above the horizon
 
-if TO.XsPos + TO.Xsize > ScreenData.Xsize || TO.YsPos + TO.Ysize > ScreenData.Ysize || TO.XsPos < 1 || TO.YsPos < 1,
+if any(TO.XsPos + TO.Xsize > ScreenData.Xsize | TO.YsPos + TO.Ysize > ScreenData.Ysize | TO.XsPos < 1 | TO.YsPos < 1),
     TO.XPos = xpos_bak;
     TO.YPos = ypos_bak;
     TO.XsPos = xspos_bak;
@@ -1732,7 +1774,7 @@ if TO.XsPos + TO.Xsize > ScreenData.Xsize || TO.YsPos + TO.Ysize > ScreenData.Ys
     user_warning('Attempt set path for object #%i failed. Target outside screen boundary.', stimnum);
 else
     TO.StartPosition = 1;
-    TO.CurrentPosition = 1;
+	TO.CurrFrame = 0;
     TO.NumPositions = length(xpath);
     if TO.Modality == 1,
         TO.Class = 'Movie';
@@ -1992,8 +2034,8 @@ if ischar(e),
         error('*** Unrecognized string passed to TrialError ***');
     end
     e = f;
-elseif isnumeric(e) && (e < 0 || e > 8),
-    error('*** TrialErrors can range from 0 to 8 ***');
+elseif isnumeric(e) && (e < 0 || e > 9),
+    error('*** TrialErrors can range from 0 to 9 ***');
 elseif ~isnumeric(e) && ~ischar(e),
     error('*** Unexpected argument type passed to TrialError (must be either numeric or string) ***');
 end
@@ -2106,6 +2148,9 @@ eventmarker(18);
 eventmarker(18);
 eventmarker(18);
 
+% Get current trial time to calculate # of samples
+MinSamplesExpected = (trialtime * DAQ.AnalogInput.SampleRate/1000) + 1; %changed by NS (03/28/2012)
+
 [exOff eyOff] = eye_position(-3);
 [eyetargets cyclerate] = eyejoytrack(-4);
 if ~isempty(eyetargets),
@@ -2125,6 +2170,7 @@ for i = 1:9,
     AIdata.General.(gname) = [];
 end
 if ~isempty(DAQ.AnalogInput),
+    while DAQ.AnalogInput.SamplesAvailable < MinSamplesExpected, end %changed by NS (03/28/2012)
     stop(DAQ.AnalogInput);
     data = getdata(DAQ.AnalogInput, DAQ.AnalogInput.SamplesAvailable);
     axes(findobj('tag', 'replica'));

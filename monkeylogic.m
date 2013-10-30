@@ -11,6 +11,8 @@ global MLHELPER_OFF
 % Modified 7/20/08 -WA (ftp/web updates added)
 % Modified 7/25/08 -WA (now stores absolute trial start time for each trial)
 % Modified 8/07/08 -WA (remote commands added)
+% Modified 2/04/13 -DF (editable variables bug fix)
+% Modified 10/7/13 -DF (actual refresh rate measurement loop added)
 
 % Syntax:
 %        monkeylogic(ConditionsFile, DataFile, TestFlag)
@@ -26,8 +28,7 @@ global MLHELPER_OFF
 % ToDo:
 % Add user-defined variables to the BHV file from the timing script (e.g., "bhvaddvariable")
 % Make alpha values active for stimuli (transparency)
-% Fix background color issue
-% Allow "Gen" function to return movies & save "gen" objects to data file
+global errorfile					%global because other functions also use it (like create_taskobjects)
 
 errorfile = 'ml_error_workspace.mat';
 disp(sprintf('\r\r\r'))
@@ -93,6 +94,67 @@ if exist(cfgfile, 'file'),
 else
     error('ML:NoCFG','Unable to find configuration file %s', cfgfile);
 end
+%Apparently, the actual refresh rate is sometimes different from
+%MLConfig.RefreshRate. Introducing a video test (same as the one in mlmenu)
+%to measure the actual refresh rate and store it in a field called
+%ActualRefreshRate.
+if usejava('jvm'),
+	mlmessage('*** Must disable JAVA by running "Matlab -nojvm" from the command prompt ***');
+end
+drawnow;
+
+bytesperpixel = 4;
+videodevice = get(findobj(gcf, 'tag', 'videodevice'), 'value');
+resval = get(findobj(gcf, 'tag', 'screenres'), 'value');
+validsizes = get(findobj(gcf, 'tag', 'screenres'), 'userdata');
+bufferpages = get(findobj(gcf, 'tag', 'bufferpages'), 'value');
+validrefresh = get(findobj(gcf, 'tag', 'refreshrate'), 'userdata');
+refreshrate = validrefresh(get(findobj(gcf, 'tag', 'refreshrate'), 'value'));
+validxsize = validsizes(:, 1);
+validysize = validsizes(:, 2);
+ScreenX = validxsize(resval);
+ScreenY = validysize(resval);
+
+try
+	mlvideo('init');
+	mlvideo('initdevice', videodevice);
+	mlvideo('setmode', videodevice, ScreenX, ScreenY, bytesperpixel, refreshrate, bufferpages);
+	mlvideo('showcursor', videodevice, 0);
+	mlvideo('clear', videodevice, [0 0 0]);
+	frames = 0;
+	t2 = 0;
+	
+	mlmessage('Now measuring actual screen refresh rate...');
+	while ~mlvideo('verticalblank', videodevice)
+	end
+	t1 = tic;
+	mlvideo('flip', videodevice);
+	
+	while t2 < 0.2
+		mlvideo('clear', videodevice, [0 0 0]);
+		while ~mlvideo('verticalblank', videodevice)
+		end
+		mlvideo('flip', videodevice);
+		frames = frames + 1;
+		t2 = toc(t1);
+	end
+	
+	mlvideo('showcursor', videodevice, 1);
+	mlvideo('restoremode', videodevice);
+	mlvideo('releasedevice', videodevice);
+	mlvideo('release');
+	framerate = frames/t2;
+	mlmessage(sprintf('Approximate video refresh rate = %3.2f Hz', framerate));
+catch
+	mlvideo('showcursor', videodevice, 1);
+	mlvideo('restoremode', videodevice);
+	mlvideo('releasedevice', videodevice);
+	mlvideo('release');
+	lasterr
+	mlmessage('*** Error encountered during application of selected video settings ***');
+end
+MLConfig.ActualRefreshRate  = framerate;
+
 MLConfig.ComputerName = lower(getenv('COMPUTERNAME'));
 MLHELPER_OFF = MLConfig.MLHelperOff;
 
@@ -426,7 +488,7 @@ disp(sprintf('<<< MonkeyLogic >>> Successfully initialized video.'))
 
 % per MS: calculate video frame length for use with movies...
 disp(sprintf('<<< MonkeyLogic >>> Calculating video frame length...'))
-numframes = 51;
+numframes = 10;
 flength = zeros(numframes, 2);
 k = 1000;
 while mlvideo('verticalblank', ScreenInfo.Device), end
@@ -600,13 +662,13 @@ end
 %%%%%
 
 for trial = 1:MLConfig.MaxTrials,
-    
-    TrialRecord.CurrentTrialNumber = trial;
-    TrialRecord.CurrentCondition = [];
-    TrialRecord.CurrentBlock = [];
-    TrialRecord.CurrentBlockCount = [];
-    TrialRecord.ConditionsThisBlock = [];
-    
+	
+	TrialRecord.CurrentTrialNumber = trial;
+    %TrialRecord.CurrentCondition = [];
+    %TrialRecord.CurrentBlock = [];
+    %TrialRecord.CurrentBlockCount = [];
+    %TrialRecord.ConditionsThisBlock = [];
+	
     if ~userdefinedtaskloop,
         %% Select Block
         if trial == 1,
@@ -643,7 +705,7 @@ for trial = 1:MLConfig.MaxTrials,
                             trialsperblock = trialsperblock + 1;
                         end
                 end
-            end
+			end
 
             if ~isempty(MLConfig.BlockChangeFunctionName) && trial > 1 && ~pausechangeblock,
                 try
@@ -670,6 +732,7 @@ for trial = 1:MLConfig.MaxTrials,
                     trialsperblock = trialsthisblock;
                     if strcmpi(MLConfig.BlockSelectFunctionName, MLConfig.BlockChangeFunctionName),
                         block = bswitchflag;
+                        possconds = BlockTypes{block};
                         userblockalreadychosen = 1;
                     end
                 else
@@ -684,7 +747,7 @@ for trial = 1:MLConfig.MaxTrials,
                 trialcount = trialsthisblock;
             end
             %%%%%
-            if ((~repeatflag && trialcount == trialsperblock && ~userblockalreadychosen) || trial == 1) || (bswitchflag && ~userblockalreadychosen), %if block > 0, FirstBlock was set, so use that...
+			if ((~repeatflag && trialcount == trialsperblock && ~userblockalreadychosen) || trial == 1) || (bswitchflag && ~userblockalreadychosen), %if block > 0, FirstBlock was set, so use that...
                 switch MLConfig.BlockLogic,
                     case 1 % Random with replacement
                         if trial > 1 || (trial == 1 && block == 0),
@@ -790,13 +853,13 @@ for trial = 1:MLConfig.MaxTrials,
                     monkeylogic_alert(1, TrialRecord, MLConfig.Alerts);
                 end
 
-            end
+			end
             
-            if pausechangeblock,
+			if pausechangeblock,
                 BlockPerformance = NaN*zeros(MLConfig.MaxTrials, 1);
                 trialsperblock = MLConfig.BlockLength(block);
                 possconds = BlockTypes{block};
-            end
+			end
 
             TrialRecord.CurrentBlock = block;
             TrialRecord.CurrentTrialWithinBlock = trialsthisblock + 1;
@@ -952,11 +1015,9 @@ for trial = 1:MLConfig.MaxTrials,
         for p = 0:11,
             overall_perfarray(p+1,1) = sum(OverAll(1:trial) == p)/denom;
         end
-        %overall_perfarray = [sum(OverAll(1:trial) == 0)/denom; sum(OverAll(1:trial) == 1)/denom; sum(OverAll(1:trial) == 2)/denom; sum(OverAll(1:trial) == 3)/denom; sum(OverAll(1:trial) == 4)/denom; sum(OverAll(1:trial) == 5)/denom; sum(OverAll(1:trial) == 6)/denom]; 
         set(findobj(gcf, 'tag', 'overallcorrect'), 'string', sprintf('%i%% correct', round(100*(sum(OverAll(1:trial) == 0)/denom))));
     else
         overall_perfarray = nan(12,1);
-        %overall_perfarray = [NaN; NaN; NaN; NaN; NaN; NaN; NaN];
         set(findobj(gcf, 'tag', 'overallcorrect'), 'string', '% correct');
     end
     if trial > TrialRecord.RecentReset,
@@ -965,16 +1026,13 @@ for trial = 1:MLConfig.MaxTrials,
         for p = 0:11,
             recent_perfarray(p+1,1) = sum(OverAll(TrialRecord.RecentReset:trial) == p)/denom;
         end
-        %recent_perfarray = [sum(OverAll(TrialRecord.RecentReset:trial) == 0)/denom; sum(OverAll(TrialRecord.RecentReset:trial) == 1)/denom; sum(OverAll(TrialRecord.RecentReset:trial) == 2)/denom; sum(OverAll(TrialRecord.RecentReset:trial) == 3)/denom; sum(OverAll(TrialRecord.RecentReset:trial) == 4)/denom; sum(OverAll(TrialRecord.RecentReset:trial) == 5)/denom; sum(OverAll(TrialRecord.RecentReset:trial) == 6)/denom]; 
         set(findobj(gcf, 'tag', 'recentcorrect'), 'string', sprintf('%i%% correct', round(100*(sum(OverAll(TrialRecord.RecentReset:trial) == 0)/denom))));
     else
         recent_perfarray = nan(12,1);
-        %recent_perfarray = [NaN; NaN; NaN; NaN; NaN; NaN; NaN];
         set(findobj(gcf, 'tag', 'recentcorrect'), 'string', '% correct');
     end
     if ~any(~isnan(BlockPerformance)),
         block_perfarray = nan(12,1);
-        %block_perfarray = [NaN; NaN; NaN; NaN; NaN; NaN; NaN;];
         set(findobj(gcf, 'tag', 'blockcorrect'), 'string', '% correct');
     else
         denom = sum(~isnan(BlockPerformance));
@@ -982,7 +1040,6 @@ for trial = 1:MLConfig.MaxTrials,
         for p = 0:11,
             block_perfarray(p+1,1) = sum(BlockPerformance(1:trialsthisblock) == p)/denom;
         end
-        %block_perfarray = [sum(BlockPerformance(1:trialsthisblock) == 0)/denom; sum(BlockPerformance(1:trialsthisblock) == 1)/denom; sum(BlockPerformance(1:trialsthisblock) == 2)/denom; sum(BlockPerformance(1:trialsthisblock) == 3)/denom; sum(BlockPerformance(1:trialsthisblock) == 4)/denom; sum(BlockPerformance(1:trialsthisblock) == 5)/denom; sum(BlockPerformance(1:trialsthisblock) == 6)/denom];
         set(findobj(gcf, 'tag', 'blockcorrect'), 'string', sprintf('%i%% correct', round(100*(sum(BlockPerformance(1:trialsthisblock) == 0)/denom)))); 
     end
     trialsthiscond = length(ResponseError{originalcond(cond)});
@@ -993,11 +1050,9 @@ for trial = 1:MLConfig.MaxTrials,
         for p = 0:11,
             cond_perfarray(p+1,1) = sum(condperf == p)/denom;
         end
-        %cond_perfarray = [sum(condperf == 0)/denom; sum(condperf == 1)/denom; sum(condperf == 2)/denom; sum(condperf == 3)/denom; sum(condperf == 4)/denom; sum(condperf == 5)/denom; sum(condperf == 6)/denom];
         set(findobj(gcf, 'tag', 'condcorrect'), 'string', sprintf('%i%% correct', round(100*(sum(condperf == 0)/denom))));
     else
         cond_perfarray = nan(12,1);
-        %cond_perfarray = [NaN; NaN; NaN; NaN; NaN; NaN; NaN];
         set(findobj(gcf, 'tag', 'condcorrect'), 'string', '% correct');
     end
     initcontrolscreen(3, [overall_perfarray block_perfarray cond_perfarray recent_perfarray]);
@@ -1015,8 +1070,8 @@ for trial = 1:MLConfig.MaxTrials,
     end
     
     % Generate / Load stimuli for this trial
-    [TaskObject ScreenInfo.ActiveVideoBuffers GenInfo] = create_taskobjects(C, ScreenInfo, DaqInfo, TrialRecord, MLPrefs.Directories, fidbhv, pl);
-    TrialRecord.CurrentConditionGenInfo = GenInfo;
+    [TaskObject ScreenInfo.ActiveVideoBuffers StimulusInfo] = create_taskobjects(C, ScreenInfo, DaqInfo, TrialRecord, MLPrefs.Directories, fidbhv, pl);
+    TrialRecord.CurrentConditionStimulusInfo = StimulusInfo;
     
     %prepare control window objects
     TaskObject = initcontrolscreen(2, ScreenInfo, TaskObject);
@@ -1342,9 +1397,10 @@ close_video(ScreenInfo);
 % Close DAQ
 close_daq(DaqInfo);
 
-% Close data file & remove runtime directory from path
+% Close data file, clear record of variable changes, & remove runtime directory from path
 bhv_write(3, fidbhv, AllCodes, BehavioralCodes, trial);
 fclose(fidbhv);
+trackvarchanges(-2);
 rmpath(MLPrefs.Directories.RunTimeDirectory);
 
 % Save MLConfig (signal transforms may have been altered during task)
@@ -1365,7 +1421,9 @@ else
     set(findobj('tag', 'mlmessagebox'), 'string', 'Done.');
 end
 
+set(findobj('tag', 'runbutton'), 'enable', 'on');		%Enable the run button in the monkeylogic's main menu
 varargout = {RESULT};
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1383,7 +1441,12 @@ if pre,
     [pname fname] = fileparts(name);
     file = [pname filesep fname '_preprocessed.mat'];
     if exist(file, 'file'),
-        load(file); %gets M, xis, yis, xisbuf, yisbuf
+        MovFile = load(file);
+        M = MovFile.M;
+        xisbuf = MovFile.xisbuf;
+        yisbuf = MovFile.yisbuf;
+        xis = MovFile.xis;
+        yis = MovFile.yis;
         numframes = size(M,2);
         preprocessed = 1;
 
@@ -1402,7 +1465,7 @@ if pre,
         xscreenpos = ScreenInfo.Half_xs + round(ScreenInfo.PixelsPerDegree * xpos) - xoffset;
         yscreenpos = ScreenInfo.Half_ys - round(ScreenInfo.PixelsPerDegree * ypos) - yoffset; %invert so that positive y is above the horizone
 
-        if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 1 || yscreenpos < 1,
+        if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 0 || yscreenpos < 0,
             error('*** MonkeyLogic Error: Movie "%s" is placed outside of screen pixel boundaries', name);
         end
     else
@@ -1435,7 +1498,7 @@ if pre,
             xscreenpos = ScreenInfo.Half_xs + round(ScreenInfo.PixelsPerDegree * xpos) - xoffset;
             yscreenpos = ScreenInfo.Half_ys - round(ScreenInfo.PixelsPerDegree * ypos) - yoffset; %invert so that positive y is above the horizone
 
-            if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 1 || yscreenpos < 1,
+            if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 0 || yscreenpos < 0,
                 error('*** MonkeyLogic Error: Movie "%s" is placed outside of screen pixel boundaries', name);
             end
             
@@ -1445,9 +1508,15 @@ if pre,
     end
 end
 if ~preprocessed,
-    reader = mmreader(sourcefile);
-    numframes = get(reader, 'numberOfFrames');
-    mov = read(reader);
+    file = name;
+    if ischar(file), %file name
+        reader = mmreader(file);
+        numframes = get(reader, 'numberOfFrames');
+        mov = read(reader);
+    else %movie data already present, as if created using a "gen" function
+        mov = file;
+        numframes = size(mov, 4);
+    end
     [pimdata xis yis xisbuf yisbuf] = pad_image(mov(:,:,:,1), ScreenInfo.ModVal, ScreenInfo.BackgroundColor); %#ok<ASGLU>
     
     M = zeros([xisbuf*yisbuf numframes],'uint32');
@@ -1473,7 +1542,7 @@ if ~preprocessed,
     xscreenpos = ScreenInfo.Half_xs + round(ScreenInfo.PixelsPerDegree * xpos) - xoffset;
     yscreenpos = ScreenInfo.Half_ys - round(ScreenInfo.PixelsPerDegree * ypos) - yoffset; %invert so that positive y is above the horizone
 
-    if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 1 || yscreenpos < 1,
+    if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 0 || yscreenpos < 0,
         error('*** MonkeyLogic Error: Movie "%s" is placed outside of screen pixel boundaries', name);
     end
 end
@@ -1482,7 +1551,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [preloaded, vbuffer] = preload_videos(Conditions, ScreenInfo)
 
-preloaded_base = struct('Class', '', 'Type', '', 'Name', '', 'Modality', 0, 'XPos', [], 'YPos', [], 'Buffer', [], 'InitFrame', 0, 'NumFrames', 0, 'StartFrame', 1, 'FrameStep', 1, 'FrameOrder', [], 'FrameEvents', [], 'StartPosition', 1, 'PositionStep', 1, 'NumPositions', 1, 'CurrentPosition', 1, 'XsPos', [], 'YsPos', [], 'Xsize', [], 'Ysize', [], 'Status', 0, 'WaveForm', [], 'Freq', [], 'NBits', [], 'OutputPort', [], 'ControlObjectColor', []);
+preloaded_base = struct('Class', '', 'Type', '', 'Name', '', 'Modality', 0, 'XPos', [], 'YPos', [], 'Buffer', [], 'InitFrame', 0, 'NumFrames', 0, 'StartFrame', 1, 'FrameStep', 1, 'FrameOrder', [], 'FrameEvents', [], 'StartPosition', 1, 'PositionStep', 1, 'NumPositions', 1, 'CurrentPosition', 1, 'XsPos', [], 'YsPos', [], 'Xsize', [], 'Ysize', [], 'Status', 0, 'WaveForm', [], 'Freq', [], 'NBits', [], 'OutputPort', [], 'ControlObjectColor', [], 'CurrFrame', 0);
 preloaded(1:length(Conditions),1) = preloaded_base;
 
 vbuffer = zeros(10000, 1);
@@ -1532,6 +1601,7 @@ for cond = 1:length(Conditions)
                 preloaded(cond,obnum).PositionStep = 1; %for translation, the number of (x,y) pairs in the path vectors to move, each video frame
                 preloaded(cond,obnum).NumPositions = 1; %for translation, the total number of (x,y) pairs in the translation path
                 preloaded(cond,obnum).CurrentPosition = 1; %for translation, the current index (x,y) pair for this stimulus
+				preloaded(cond,obnum).CurrFrame = 0; %for translation, the current frame for this stimulus
                 preloaded(cond,obnum).XPos = xpos; %the initial x position, in the absence of a translation path
                 preloaded(cond,obnum).YPos = ypos; %the initial y position, in the absence of a translation path
                 preloaded(cond,obnum).ControlObjectColor = [1 1 0.5]; %the color of the representative symbol to appear on the control screen
@@ -1551,7 +1621,7 @@ for cond = 1:length(Conditions)
                 xscreenpos = ScreenInfo.Half_xs + round(ScreenInfo.PixelsPerDegree * xpos) - xoffset;
                 yscreenpos = ScreenInfo.Half_ys - round(ScreenInfo.PixelsPerDegree * ypos) - yoffset; %invert so that positive y is above the horizone
 
-                if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 1 || yscreenpos < 1,
+                if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 0 || yscreenpos < 0,
                     error('*** MonkeyLogic Error: Movie "%s" is placed outside of screen pixel boundaries', C(obnum).Name);
                 end
                 
@@ -1565,6 +1635,7 @@ for cond = 1:length(Conditions)
                 preloaded(cond,obnum).PositionStep = 1; %for translation, the number of (x,y) pairs in the path vectors to move, each video frame
                 preloaded(cond,obnum).NumPositions = 1; %for translation, the total number of (x,y) pairs in the translation path
                 preloaded(cond,obnum).CurrentPosition = 1; %for translation, the current index (x,y) pair for this stimulus
+				preloaded(cond,obnum).CurrFrame = 0; %for translation, the current frame for this stimulus
                 preloaded(cond,obnum).XPos = xpos; %the initial x position, in the absence of a translation path
                 preloaded(cond,obnum).YPos = ypos; %the initial y position, in the absence of a translation path
                 preloaded(cond,obnum).ControlObjectColor = [1 1 0.5]; %the color of the representative symbol to appear on the control screen
@@ -1585,8 +1656,8 @@ end
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function [TaskObject, vbuffer, GenInfo] = create_taskobjects(C, ScreenInfo, DaqInfo, TrialRecord, mldirectories, fidbhv, varargin)
-%persistent GenData
+function [TaskObject, vbuffer, StimulusInfo] = create_taskobjects(C, ScreenInfo, DaqInfo, TrialRecord, mldirectories, fidbhv, varargin)
+global errorfile				%errorfile declared and initialized at the beginning of monkeylogic.m
 
 preloaded = [];
 if ~isempty(varargin),
@@ -1596,21 +1667,46 @@ end
 vbuffer = zeros(10000, 1);
 vbufnum = 0;
 
-ccount = 0;
-newC = C;
+lc = length(C);
+TaskObject(1:lc) = struct('Class', '', 'Type', '', 'Modality', 0, 'XPos', [], 'YPos', [], 'Buffer', [], 'FrameOrder', [], 'FrameEvents', [], 'XsPos', [], 'YsPos', [], 'Xsize', [], 'Ysize', [], 'Status', 0, 'WaveForm', [], 'Freq', [], 'NBits', [], 'OutputPort', [], 'ControlObjectColor', [], 'Used', 0);
+StimulusInfo = cell(1,lc);
 
 usepreprocessed = ScreenInfo.UsePreProcessedImages;
 
-GenInfo = cell(1,length(C));
-for obnum = 1:length(C), %first check for user-generated images
-    if strcmp(C(obnum).Type, 'gen'),
+for obnum = 1:lc, %first check for user-generated images
+    imdata = [];
+    MoreInfo = [];
+    if strcmp(C(obnum).Type, 'gen')
         [pname fname] = fileparts(C(obnum).FunctionName);
-        if ~exist(fname, 'file'),
+		if ~exist(fname, 'file'),
             prep_m_file(C(obnum).FunctionName, mldirectories);
-        end
-        try
-            %[imdata varargout] = feval(fname, TrialRecord, GenData);
-            imdata = feval(fname, TrialRecord);
+		end
+        
+		try
+            needxy = isnan(C(obnum).Xpos) || isnan(C(obnum).Ypos);
+            nout = nargout(fname);
+			if nout < 3 && needxy,
+                error('*** "Gen" function %s should return two additional output arguments to specify X & Y position', fname);
+			end
+            
+			if nout == 1,
+                imdata = feval(fname, TrialRecord);
+            elseif nout == 2,
+                [imdata MoreInfo] = feval(fname, TrialRecord);
+            elseif nout == 3,
+                [imdata xpos ypos] = feval(fname, TrialRecord);
+            else
+                [imdata xpos ypos MoreInfo] = feval(fname, TrialRecord);
+			end
+
+            if needxy,
+                if isstruct(xpos) || iscell(xpos) || isstruct(ypos) || iscell(ypos) || ischar(xpos) || ischar(ypos) || numel(xpos) > 1 || numel(ypos) > 1,
+                    error('*** Xpos and Ypos values returned by "Gen" function %s should be simple scalar variables', fname);
+                end
+                C(obnum).Xpos = xpos;
+                C(obnum).Ypos = ypos;
+            end
+
         catch ME
             fclose(fidbhv); %need to add code to finalize bhv file...
             str = sprintf('*** Error executing "gen" function %s', fname);
@@ -1621,65 +1717,52 @@ for obnum = 1:length(C), %first check for user-generated images
             clear DaqInfo
             save(errorfile);
             return
-        end
-        if isstruct(imdata),
-            GenInfo{obnum} = imdata.info;
-            imdata  = imdata.img;
-        end
-        if ~iscell(imdata),
-            imdata = {imdata};
-        end
-        for i = 1:length(imdata), %can have multiple images from one "gen" object
-            thisimdata = imdata{i};
-            ccount = ccount + 1;
-            warning('off','MATLAB:intConvertNaN');
-            if min(min(thisimdata)) < 0,
-                thisimdata = thisimdata + min(min(thisimdata));
-            end
-            warning('off','MATLAB:intConvertNaN');
-            cimdata1 = thisimdata(:, :, 1);
-            cimdata2 = thisimdata(:, :, 2);
-            cimdata3 = thisimdata(:, :, 3);
-            cimdata1(cimdata1 == ScreenInfo.BackgroundColor(1)) = NaN;
-            cimdata2(cimdata2 == ScreenInfo.BackgroundColor(2)) = NaN;
-            cimdata3(cimdata3 == ScreenInfo.BackgroundColor(3)) = NaN;
-            cocolor = ([nan_mean(nan_mean(cimdata1)) nan_mean(nan_mean(cimdata2)) nan_mean(nan_mean(cimdata3))]);
-            cocolor(isnan(cocolor)) = 0;
-            
-            newC(ccount) = C(obnum);
-            newC(ccount).Type = 'imd';
-            newC(ccount).Class = 'UserGeneratedImage';
-            newC(ccount).ImageData = thisimdata;
-            newC(ccount).ControlObjectColor = cocolor;
-            C(obnum).Class = '';
-            C(obnum).ImageData = 0;
-            C(obnum).ControlObjectColor = 0;
-        end
-    else
-        ccount = ccount + 1;
-        newC(ccount) = C(obnum);
+		end
+		
+		movs = '.((avi)|(mpg))';
+		pics = '.((bmp)|(jpg)|(png)|(tiff))';
+		
+		if ischar(imdata)							%file name generated by gen function. Could be either a movie or a pic.
+			C(obnum).Name = imdata;
+			if any(regexpi(imdata, pics, 'start'))
+				imdata = imread(imdata);
+			elseif ~any(regexpi(imdata, movs, 'start'))
+					error('Unrecognized file type chosen by gen function.');
+			end
+		end
+        
+		if ndims(imdata) == 4 || ischar(imdata)	%movie
+			C(obnum).Type = 'mov';
+		elseif ndims(imdata) == 3 %RGB image
+            C(obnum).Type = 'pic';
+		elseif ndims(imdata) == 2,
+            imdata = repmat(imdata, [1 1 3]); %grayscale image;
+            C(obnum).Type = 'pic';
+        else
+            fprintf('*** WARNING *** image data for "gen" object created by %s contains an unexpected number of dimensions', fname);
+            imdata = repmat(imdata(:, :, 1), [1 1 3]); % band-aid, to allow task execution to continue
+            C(obnum).Type = 'pic';
+		end
     end
-end
 
-C = newC;
-lc = length(C);
-TaskObject(1:lc) = struct('Class', '', 'Type', '', 'Modality', 0, 'XPos', [], 'YPos', [], 'Buffer', [], 'FrameOrder', [], 'FrameEvents', [], 'XsPos', [], 'YsPos', [], 'Xsize', [], 'Ysize', [], 'Status', 0, 'WaveForm', [], 'Freq', [], 'NBits', [], 'OutputPort', [], 'ControlObjectColor', []);
-
-for obnum = 1:lc,
     t = C(obnum).Type;
     TaskObject(obnum).Type = t;
     TaskObject(obnum).ControlObjectColor = [1 1 1];
-    preprocessed = 0;
-    if strcmpi(t, 'fix') || strcmpi(t, 'pic') || strcmpi(t, 'dot') || strcmpi(t, 'crc') || strcmpi(t, 'sqr') || strcmpi(t, 'imd'),
+    if strcmpi(t, 'fix') || strcmpi(t, 'pic') || strcmpi(t, 'dot') || strcmpi(t, 'crc') || strcmpi(t, 'sqr'), %static visual stimuli
 
-        if strcmp(t, 'fix') || strcmp(t, 'dot'),
+		if strcmp(t, 'fix') || strcmp(t, 'dot'),
             imdata = ScreenInfo.FixationPoint;
             cocolor = [1 1 1];
             TaskObject(obnum).Class = 'FixationPoint';
         elseif strcmp(t, 'pic'),
-            imdata = double(imread(C(obnum).Name));
+            if isempty(imdata), %not user-generated, which would have been loaded above
+                MoreInfo = imfinfo(C(obnum).Name);
+                [imdata immap imalpha] = imread(C(obnum).Name); %need to incorporate transparency into visual stim presentation...            
+                imdata = double(imdata);
+            end
+            
             if C(obnum).Xsize ~= -1 && C(obnum).Ysize ~= -1,
-                imdata = imresize(imdata, [C(obnum).Xsize C(obnum).Ysize]);
+                imdata = imresize(imdata, [C(obnum).Ysize C(obnum).Xsize]);
                 if any(any(any(imdata < 0))),
                     imdata(imdata < 0) = 0;
                 end
@@ -1687,6 +1770,8 @@ for obnum = 1:lc,
                     imdata(imdata > 255) = 255;
                 end
             end
+            
+            %create control screen object using average non-background color
             cimdata1 = imdata(:, :, 1);
             cimdata2 = imdata(:, :, 2);
             cimdata3 = imdata(:, :, 3);
@@ -1695,7 +1780,6 @@ for obnum = 1:lc,
             cimdata3(cimdata3 == ScreenInfo.BackgroundColor(3)) = NaN;
             cocolor = ([nan_mean(nan_mean(cimdata1)) nan_mean(nan_mean(cimdata2)) nan_mean(nan_mean(cimdata3))]);
             cocolor(isnan(cocolor)) = 0;
-
             TaskObject(obnum).Class = 'StaticImage';
         elseif strcmp(t, 'crc'),
             crcrad = C(obnum).Radius * ScreenInfo.PixelsPerDegree;
@@ -1708,26 +1792,21 @@ for obnum = 1:lc,
             imdata = makesquare([sqrx sqry], C(obnum).Color, C(obnum).FillFlag, ScreenInfo.BackgroundColor);
             cocolor = (C(obnum).Color);
             TaskObject(obnum).Class = 'Square';
-        elseif strcmp(t, 'imd'), %from "gen" objects, evaluated above
-            imdata = C(obnum).ImageData;
-            cocolor = C(obnum).ControlObjectColor;
-        end
+		end
 
-        if ~isnan(C(obnum).Xpos),
+		if ~isnan(C(obnum).Xpos),
             xpos = C(obnum).Xpos; %these are in degrees of viewing angle
             ypos = C(obnum).Ypos;
-        end
+		end
 
-        if ~preprocessed,
-            [imdata xis yis xisbuf yisbuf] = pad_image(imdata, ScreenInfo.ModVal, ScreenInfo.BackgroundColor);
-        end
+        [imdata xis yis xisbuf yisbuf] = pad_image(imdata, ScreenInfo.ModVal, ScreenInfo.BackgroundColor);
 
         xoffset = round(xis/2);
         yoffset = round(yis/2);
         xscreenpos = ScreenInfo.Half_xs + round(ScreenInfo.PixelsPerDegree * xpos) - xoffset;
         yscreenpos = ScreenInfo.Half_ys - round(ScreenInfo.PixelsPerDegree * ypos) - yoffset; %invert so that positive y is above the horizon
         
-        if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 1 || yscreenpos < 1,
+        if xscreenpos + xis > ScreenInfo.Xsize || yscreenpos + yis > ScreenInfo.Ysize || xscreenpos < 0 || yscreenpos < 0,
             fprintf('*** MonkeyLogic Error: Image "%s" is placed outside of screen pixel boundaries.\n', C(obnum).Name);
             error_escape(ScreenInfo, DaqInfo, fidbhv);
             clear DaqInfo
@@ -1750,6 +1829,7 @@ for obnum = 1:lc,
         TaskObject(obnum).PositionStep = 1; %for translation, the number of (x,y) pairs to step along the path each video frame
         TaskObject(obnum).NumPositions = 1; %for translation, the number of (x,y) pairs that make up the path
         TaskObject(obnum).CurrentPosition = 1; %for translation, the index for the current (x,y) pair
+		TaskObject(obnum).CurrFrame = 0; %for translation, the current frame for this stimulus
         TaskObject(obnum).ControlObjectColor = cocolor; %the color of the symbol appearing on the control-screen
         TaskObject(obnum).Buffer = vbuf; %the address of the video buffer
         TaskObject(obnum).XsPos = xscreenpos; %the screen position in pixels (of XPos)
@@ -1758,7 +1838,7 @@ for obnum = 1:lc,
         TaskObject(obnum).Ysize = yis; %the y-size of the image (in pixels)
         TaskObject(obnum).Status = 0; %tells 'toggleobject' if the image is currently displayed
         n = C(obnum).Name;
-        if isempty(n),
+		if isempty(n),
             n = C(obnum).Type;
         else
             f = (n == filesep);
@@ -1769,7 +1849,7 @@ for obnum = 1:lc,
             if any(dot),
                 n = n(1:find(dot, 1, 'last')-1);
             end
-        end
+		end
         TaskObject(obnum).Name = n; %for control display (not currently used)
 
     elseif strcmpi(t, 'mov'), %movie
@@ -1779,7 +1859,13 @@ for obnum = 1:lc,
             xpos = C(obnum).Xpos;
             ypos = C(obnum).Ypos;
 
-            [firstbuffer, lastbuffer, vbuffer, vbufnum, xis, yis, xscreenpos, yscreenpos, numframes] = buf_mov(C(obnum).Name, xpos, ypos, vbuffer, vbufnum, ScreenInfo, usepreprocessed);
+            if ~isempty(imdata),
+                mov = imdata;
+            else
+                mov = C(obnum).Name;
+            end
+            
+            [firstbuffer, lastbuffer, vbuffer, vbufnum, xis, yis, xscreenpos, yscreenpos, numframes] = buf_mov(mov, xpos, ypos, vbuffer, vbufnum, ScreenInfo, usepreprocessed);
 
             TaskObject(obnum).Class = 'Movie';
             TaskObject(obnum).Modality = 2; % movie
@@ -1791,6 +1877,7 @@ for obnum = 1:lc,
             TaskObject(obnum).PositionStep = 1; %for translation, the number of (x,y) pairs in the path vectors to move, each video frame
             TaskObject(obnum).NumPositions = 1; %for translation, the total number of (x,y) pairs in the translation path
             TaskObject(obnum).CurrentPosition = 1; %for translation, the current index (x,y) pair for this stimulus
+			TaskObject(obnum).CurrFrame = 0; %for translation, the current frame for this stimulus
             TaskObject(obnum).XPos = xpos; %the initial x position, in the absence of a translation path
             TaskObject(obnum).YPos = ypos; %the initial y position, in the absence of a translation path
             TaskObject(obnum).ControlObjectColor = [1 1 0.5]; %the color of the representative symbol to appear on the control screen
@@ -1801,27 +1888,31 @@ for obnum = 1:lc,
             TaskObject(obnum).Ysize = yis; %the y-size of the image, in pixels
             TaskObject(obnum).Status = 0; %the status of the movie (0 = off, any positive integer reflects the current frame number)
             TaskObject(obnum).Name = C(obnum).Name;
+			if isempty(TaskObject(obnum).Name)
+				TaskObject(obnum).Name = 'mov';
+			end
         else
-            TaskObject(obnum).Class = preloaded(obnum).Class;
-            TaskObject(obnum).Modality = preloaded(obnum).Modality; % movie
-            TaskObject(obnum).InitFrame = preloaded(obnum).InitFrame; %the video frame, as numbered since the beginning of a trial, in which the stimulus was first displayed
-            TaskObject(obnum).StartFrame = preloaded(obnum).StartFrame; %the frame number, in terms of movie frames in this movie stimulus, to start playback
-            TaskObject(obnum).FrameStep = preloaded(obnum).FrameStep; %the number of steps to move forward or back (if negative) per video frame
-            TaskObject(obnum).NumFrames = preloaded(obnum).NumFrames; %the total number of movie frames
-            TaskObject(obnum).StartPosition = preloaded(obnum).StartPosition; %for translation, the index of the (x,y) pair at which the stimulus is to start
-            TaskObject(obnum).PositionStep = preloaded(obnum).PositionStep; %for translation, the number of (x,y) pairs in the path vectors to move, each video frame
-            TaskObject(obnum).NumPositions = preloaded(obnum).NumPositions; %for translation, the total number of (x,y) pairs in the translation path
-            TaskObject(obnum).CurrentPosition = preloaded(obnum).CurrentPosition; %for translation, the current index (x,y) pair for this stimulus
-            TaskObject(obnum).XPos = preloaded(obnum).XPos; %the initial x position, in the absence of a translation path
-            TaskObject(obnum).YPos = preloaded(obnum).YPos; %the initial y position, in the absence of a translation path
-            TaskObject(obnum).ControlObjectColor = preloaded(obnum).ControlObjectColor; %the color of the representative symbol to appear on the control screen
-            TaskObject(obnum).Buffer = preloaded(obnum).Buffer; %the addresses of the video buffers
-            TaskObject(obnum).XsPos = preloaded(obnum).XsPos; %the actual screen position in pixels (for XPos)
-            TaskObject(obnum).YsPos = preloaded(obnum).YsPos; %the actual screen position in pixels (for YPos)
-            TaskObject(obnum).Xsize = preloaded(obnum).Xsize; %the x-size of the image, in pixels
-            TaskObject(obnum).Ysize = preloaded(obnum).Ysize; %the y-size of the image, in pixels
-            TaskObject(obnum).Status = preloaded(obnum).Status; %the status of the movie (0 = off, any positive integer reflects the current frame number)
-            TaskObject(obnum).Name = preloaded(obnum).Name;
+            TaskObject(obnum) = preloaded(obnum);
+%             TaskObject(obnum).Class = preloaded(obnum).Class;
+%             TaskObject(obnum).Modality = preloaded(obnum).Modality; % movie
+%             TaskObject(obnum).InitFrame = preloaded(obnum).InitFrame; %the video frame, as numbered since the beginning of a trial, in which the stimulus was first displayed
+%             TaskObject(obnum).StartFrame = preloaded(obnum).StartFrame; %the frame number, in terms of movie frames in this movie stimulus, to start playback
+%             TaskObject(obnum).FrameStep = preloaded(obnum).FrameStep; %the number of steps to move forward or back (if negative) per video frame
+%             TaskObject(obnum).NumFrames = preloaded(obnum).NumFrames; %the total number of movie frames
+%             TaskObject(obnum).StartPosition = preloaded(obnum).StartPosition; %for translation, the index of the (x,y) pair at which the stimulus is to start
+%             TaskObject(obnum).PositionStep = preloaded(obnum).PositionStep; %for translation, the number of (x,y) pairs in the path vectors to move, each video frame
+%             TaskObject(obnum).NumPositions = preloaded(obnum).NumPositions; %for translation, the total number of (x,y) pairs in the translation path
+%             TaskObject(obnum).CurrentPosition = preloaded(obnum).CurrentPosition; %for translation, the current index (x,y) pair for this stimulus
+%             TaskObject(obnum).XPos = preloaded(obnum).XPos; %the initial x position, in the absence of a translation path
+%             TaskObject(obnum).YPos = preloaded(obnum).YPos; %the initial y position, in the absence of a translation path
+%             TaskObject(obnum).ControlObjectColor = preloaded(obnum).ControlObjectColor; %the color of the representative symbol to appear on the control screen
+%             TaskObject(obnum).Buffer = preloaded(obnum).Buffer; %the addresses of the video buffers
+%             TaskObject(obnum).XsPos = preloaded(obnum).XsPos; %the actual screen position in pixels (for XPos)
+%             TaskObject(obnum).YsPos = preloaded(obnum).YsPos; %the actual screen position in pixels (for YPos)
+%             TaskObject(obnum).Xsize = preloaded(obnum).Xsize; %the x-size of the image, in pixels
+%             TaskObject(obnum).Ysize = preloaded(obnum).Ysize; %the y-size of the image, in pixels
+%             TaskObject(obnum).Status = preloaded(obnum).Status; %the status of the movie (0 = off, any positive integer reflects the current frame number)
+%             TaskObject(obnum).Name = preloaded(obnum).Name;
         end
 
     elseif strcmpi(t, 'snd'), %sound
@@ -1887,6 +1978,10 @@ for obnum = 1:lc,
         TaskObject(obnum).Name = TaskObject(obnum).Class;
 
     end
+    if ~isempty(MoreInfo),
+        TaskObject(obnum).MoreInfo = MoreInfo;
+    end
+    StimulusInfo(obnum) = {TaskObject(obnum)};   
 end
 vbuffer = vbuffer(1:vbufnum);
 
@@ -2025,7 +2120,9 @@ mlvideo('showcursor', ScreenInfo.Device, 1);
 close_video(ScreenInfo);
 close_daq(DaqInfo);
 fclose(fidbhv);
+trackvarchanges(-2);						%clears VarChanges, which is a record of changes to editable variables.
 ax = findobj('tag', 'replica');
+set(findobj('tag', 'runbutton'), 'enable', 'on');	%Enables the run button in the main menu
 if ~isempty(ax),
     axes(ax);
     cla;
@@ -2053,7 +2150,7 @@ errorstring(esl) = num2str(trialerror);
 conderrors(originalcond(cond)) = {errorstring};
 set(herror, 'string', errorstring, 'userdata', conderrors);
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function ScreenInfo = init_video(ScreenInfo)
 
 ScreenInfo.IsActive = 0;
@@ -2084,6 +2181,10 @@ if ScreenInfo.PhotoDiode > 1,
     [img xis yis xisbuf yisbuf] = pad_image(img, ScreenInfo.ModVal);
     ScreenInfo.PdBuffer = mlvideo('createbuffer', ScreenInfo.Device, xisbuf, yisbuf, ScreenInfo.BytesPerPixel);
     mlvideo('copybuffer', ScreenInfo.Device, ScreenInfo.PdBuffer, img);
+    img = zeros(xis, yis, 3);
+    [img xis yis xisbuf yisbuf] = pad_image(img, ScreenInfo.ModVal);
+    ScreenInfo.PdBufferBlack = mlvideo('createbuffer', ScreenInfo.Device, xisbuf, yisbuf, ScreenInfo.BytesPerPixel);
+    mlvideo('copybuffer', ScreenInfo.Device, ScreenInfo.PdBufferBlack, img);
     switch ScreenInfo.PhotoDiode,
         case 2, %upper left
             ScreenInfo.PdX = 0;
@@ -2121,7 +2222,7 @@ mlvideo('copybuffer', ScreenInfo.Device, ScreenInfo.CursorBlankBuffer, blankbuff
 ScreenInfo.CursorXsize = xis;
 ScreenInfo.CursorYsize = yis;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function ScreenInfo = close_video(ScreenInfo, varargin)
 
 for i = 1:length(ScreenInfo.ActiveVideoBuffers),
@@ -2159,7 +2260,7 @@ mlvideo('releasedevice', ScreenInfo.Device);
 mlvideo('release');
 ScreenInfo.IsActive = 0;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function close_daq(DaqInfo)
 
 if ~isempty(DaqInfo),
@@ -2454,6 +2555,7 @@ if ~isempty(kb) || remotecommand,
     tic; %restart ITI timer
 end
 
+%%
 function goodmonkey(duration, varargin)
 persistent DAQ rewardtype reward_on reward_off noreward
 
@@ -2521,9 +2623,11 @@ for i = 1:numreward,
     end
 end
 
+%%
 function m = nan_mean(x)
 m = mean(x(~isnan(x)));
 
+%%
 function rgb = rgbval(r,g,b)
 r=uint32(r);
 g=uint32(g);
@@ -2531,7 +2635,27 @@ b=uint32(b);
 z = 65536*r+256*g+b;
 rgb = z(:)';
 
-%%%%% mlhelper.exe wrapper functions
+%%
+function mlmessage(str)
+
+h1 = findobj(gcf, 'tag', 'mlmessagebox');
+if isempty(str),
+    set(h1, 'string', '');
+    return
+end
+h2 = findobj(gcf, 'tag', 'mlmessageframe');
+if ~iscell(str),
+    str = {str};
+end
+for i = 1:length(str),
+    set(h1, 'string', str(i));
+    set([h1 h2], 'backgroundcolor', [1 1 0.5]);
+    pause(0.05);
+    set([h1 h2], 'backgroundcolor', [1 1 1]);
+    drawnow;
+end
+
+%% mlhelper.exe wrapper functions
 function disable_cursor
 global MLHELPER_OFF
 if MLHELPER_OFF,
@@ -2545,6 +2669,7 @@ end
 dirs = getpref('MonkeyLogic', 'Directories');
 system(sprintf('%smlhelper --cursor-disable',dirs.BaseDirectory));
 
+%%
 function enable_cursor
 global MLHELPER_OFF
 if MLHELPER_OFF,
@@ -2557,6 +2682,7 @@ end
 dirs = getpref('MonkeyLogic', 'Directories');
 system(sprintf('%smlhelper --cursor-enable',dirs.BaseDirectory));
 
+%%
 function disable_syskeys
 global MLHELPER_OFF
 if MLHELPER_OFF,
@@ -2565,6 +2691,7 @@ end
 dirs = getpref('MonkeyLogic', 'Directories');
 system(sprintf('%smlhelper --syskeys-disable',dirs.BaseDirectory));
 
+%%
 function enable_syskeys
 global MLHELPER_OFF
 if MLHELPER_OFF,
@@ -2573,6 +2700,7 @@ end
 dirs = getpref('MonkeyLogic', 'Directories');
 system(sprintf('%smlhelper --syskeys-enable',dirs.BaseDirectory));
 
+%%
 function clip_cursor(varargin)
 global MLHELPER_OFF
 if MLHELPER_OFF,
@@ -2594,6 +2722,7 @@ b = sheight-rect(2);
 dirs = getpref('MonkeyLogic', 'Directories');
 system(sprintf('%smlhelper --cursor-clip %i %i %i %i',dirs.BaseDirectory,l,t,r,b));
 
+%%
 function unclip_cursor
 global MLHELPER_OFF
 if MLHELPER_OFF,
@@ -2602,6 +2731,7 @@ end
 dirs = getpref('MonkeyLogic', 'Directories');
 system(sprintf('%smlhelper --cursor-unclip',dirs.BaseDirectory));
 
+%%
 function mlhelper_stop
 global MLHELPER_OFF
 if MLHELPER_OFF,

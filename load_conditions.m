@@ -15,6 +15,7 @@ function [Conditions, cerror] = load_conditions(varargin)
 % Created by WA July, 2006
 % Modified 9/06/07 -WA
 % Modified 8/19/08 -WA (to handle non-integer RelativeFrequency values)
+% 
 
 cerror = '';
 Conditions = struct;
@@ -73,7 +74,7 @@ while i <= length(columns),
     if i <= length(column_order),
         match = column_order{i};
     else
-        match = ['TaskObject#' sprintf('%0.1d',i-length(column_order))];
+        match = ['TaskObject#' sprintf('%i',i-length(column_order))];
     end
     j=1;
     while ~strcmpi(h{j},match),
@@ -89,7 +90,7 @@ while i <= length(columns),
     i=i+1;
     if i > length(h)+5,
         cerror = 'Unable to parse conditions file header.';
-        fprintf('Valid columns are "Condition", "Frequency", "Block", "Timing File", "Info", and "TaskObject#1" through "TaskObject#9".\n');
+        fprintf('Valid columns are "Condition", "Frequency", "Block", "Timing File", "Info", and "TaskObject#1" through TaskObject#N".\n');
         return
     end
 end
@@ -150,7 +151,7 @@ while txt ~= -1,
         else
             cib = p{columns(3)};
         end
-        if length(cib) >= 3 &&  strcmp(cib(1:3), 'all'),
+        if length(cib) >= 3 &&  strcmpi(cib(1:3), 'all'),
             BlockSpec{condnum} = 0;
         else
             try
@@ -189,7 +190,7 @@ while txt ~= -1,
         
         % Read Task Objects
         clear TaskObject
-        TaskObject(1:100) = struct('Type', '', 'Name', '', 'RawText', '', 'FunctionName', '', 'Xpos', [], 'Ypos', [], 'Xsize', [], 'Ysize', [], 'Radius', [], 'Color', [], 'FillFlag', [], 'WaveForm', [], 'Freq', [], 'NBits', [], 'OutputPort', []);
+        TaskObject(1:100) = struct('Type', '', 'Name', '', 'RawText', '', 'FunctionName', '', 'Xpos', [], 'Ypos', [], 'Xsize', -1, 'Ysize', -1, 'Radius', [], 'Color', [], 'FillFlag', [], 'WaveForm', [], 'Freq', [], 'NBits', [], 'OutputPort', []);
         for obnum = 1:(length(p))-nonTaskCols,
             object = p{columns(obnum+length(column_order))};
             object = object(object ~= '"'); %remove quotes that might have been added by Excel
@@ -293,9 +294,6 @@ while txt ~= -1,
                             return
                         end
                         TaskObject(obnum).Ysize = height;
-                    else
-                        TaskObject(obnum).Xsize = -1;
-                        TaskObject(obnum).Ysize = -1;
                     end
                     
                 elseif strcmp(obtype, 'gen'),
@@ -304,16 +302,9 @@ while txt ~= -1,
                         cerror = sprintf('Must have 1 or 3 arguments, function name & optionally xpos & ypos, for "gen" object (condition #%i)', condnum);
                         return
                     end
-                    funcname = lower(attributes{1});
-                    [pname fname ext] = fileparts(funcname);
-                    if isempty(pname),
-                        pname = MLPrefs.Directories.RunTimeDirectory;
-                    else
-                        pname = [pname filesep];
-                    end
-                    if isempty(ext),
-                        ext = '.m';
-                    end
+                    fname = attributes{1};
+                    pname = MLPrefs.Directories.ExperimentDirectory;
+                    ext = '.m';
                     funcname = [pname fname ext];
                     if ~exist(funcname, 'file'),
                         disp(sprintf('Warning: File generation function "%s" not found', funcname));
@@ -338,7 +329,7 @@ while txt ~= -1,
                     else
                         TaskObject(obnum).Xpos = NaN;
                         TaskObject(obnum).Ypos = NaN;
-                    end
+					end
         
                 elseif strcmp(obtype, 'snd'), %sound (can be generated sine-wave or read from .mat or .wav file) - syntax: snd(sndfile) or snd("sin", duration, frequency, nbits)
     

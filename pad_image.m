@@ -3,8 +3,8 @@ function [padded_image, xis, yis, xbuf, ybuf] = pad_image(imdata, modval, vararg
 % Created by WA, 1/18/08.
 % Modified 5/1/08 -WA (to stretch, rather than corner-blit, images - results in minimal blank-space around images)
 % Modified 7/25/08 -WA (to allow x- or y-dimension of image to be 1, and to skip this routine if xis & yis == modval)
-% Modified 8/21/08 -WA (to make certain inputs for interpolation are of type "double"
-
+% Modified 8/21/08 -WA (to make certain inputs for interpolation are of
+% type "double"
 [yis xis zis] = size(imdata);
 
 if xis == 1 || yis == 1, %if xis or yis == 1, need to expand slightly for interp, below
@@ -47,12 +47,14 @@ else %stretch image to be multiple of modval on each side
 
     [x y] = meshgrid(1:(xis-1)/(xbuf-1):xis, 1:(yis-1)/(ybuf-1):yis);
     zi = cell(zis, 1);
-    if ~isa(imdata, 'double'),
+	if ~isa(imdata, 'double'),
         imdata = double(imdata);
-    end
-    for i = 1:zis,
+	end
+	
+	for i = 1:zis,
         zi{i} = interp2(imdata(:, :, i), x, y);
-    end
+	end
+	
     imdata = cat(3, zi{:});
 end
 

@@ -9,9 +9,7 @@ function mlmenu(varargin)
 % Modified 9/08/08 -SM (to use appropriate analog input-type when testing those inputs)
 % Modified 2/01/12 -WA (to remove overwrite_hardware_cfg subfunction - had broken the ability to write new cfg files when none present.
 
-MAX_BITS_PER_FILE = 40 *1000*1000;
-
-lastupdate = 'February, 2012';
+lastupdate = 'September, 2012';
 
 mlf = findobj('tag', 'monkeylogicmainmenu');
 if ~isempty(mlf) && isempty(gcbo),
@@ -26,9 +24,9 @@ if ~ispref('MonkeyLogic', 'Directories'),
 end
 MLPrefs.Directories = getpref('MonkeyLogic', 'Directories');
 
-validxsize =  [ 320   320    640   768    800    1024   1024  1152  1152   1280     1280   1280   1366   1400    1440   1600   1680     1920     1920   2048  2048  2560       2560    2560    2560];
-validysize =  [ 200   240    480   576    600    600    768   768   864    720      960    1024   768    1050    900    1200   1050     1080     1200   1080  1536  1440       1600    1920    2048];
-validlabels = {'CGA' 'QVGA' 'VGA' 'PAL'  'SVGA' 'WSVGA' 'XGA' '3:2' '4:3'  'HD720'  '4:3'  '5:4'  'HDTV' 'SXGA+' '8:5'  'UGA' 'WSXGA+' 'HD1080' 'WUXGA' '2K'  'QXGA' 'HD1440' 'WQXGA'  '5MEG' 'QSXGA'};
+validxsize =  [ 320   320    640   768    800    1024   1024  1152  1152   1280     1280   1280   1366   1400    1440   1600   1680     1920     1920   2048  2048  2560       2560    2560    2560    3840    4096];
+validysize =  [ 200   240    480   576    600    600    768   768   864    720      960    1024   768    1050    900    1200   1050     1080     1200   1080  1536  1440       1600    1920    2048    2160    3072];
+validlabels = {'CGA' 'QVGA' 'VGA' 'PAL'  'SVGA' 'WSVGA' 'XGA' '3:2' '4:3'  'HD720'  '4:3'  '5:4'  'HDTV' 'SXGA+' '8:5'  'UGA' 'WSXGA+' 'HD1080' 'WUXGA' '2K'  'QXGA' 'HD1440' 'WQXGA'  '5MEG' 'QSXGA' 'UHDTV'  '4K'};
 validrefresh = [60 72 75 85 100 120 240];
 
 numvalidsizes = length(validxsize);
@@ -80,6 +78,7 @@ if isempty(mlf),
     disp(' ')
     disp(' ')
     disp(sprintf('<<< MonkeyLogic >>> Revision Date: %s...', lastupdate))
+    chknewupdates(lastupdate);
     envOS = getenv('OS');
     envCN = getenv('COMPUTERNAME');
     envUSER = getenv('USERNAME');
@@ -252,12 +251,7 @@ if isempty(mlf),
     uicontrol('style', 'text', 'position', [xbase-8 ybase+23 20 15], 'string', 'K', 'backgroundcolor', fcolor, 'horizontalalignment', 'center');
     uicontrol('style', 'text', 'position', [xbase-8 ybase+11 20 15], 'string', 'S', 'backgroundcolor', fcolor, 'horizontalalignment', 'center');
     uicontrol('style', 'listbox', 'position', [xbase+13 ybase+10 60 77], 'string', '--', 'enable', 'off', 'backgroundcolor', [1 1 1], 'tag', 'blocklist', 'callback', 'mlmenu', 'userdata', 1);
-    %{
-    [xbase+80 ybase+35 170 20]
-    [xbase+248 ybase+40 40 20]
-    [xbase+80 ybase+62 170 20]
-    [xbase+248 ybase+67 40 20]
-    %}
+    
     uicontrol('style', 'text', 'position', [xbase+120 ybase+25 130 20], 'string', 'Count only correct trials:', 'backgroundcolor', fcolor);
     uicontrol('style', 'checkbox', 'position', [xbase+248 ybase+30 15 15], 'tag', 'countonlycorrect', 'value', 0, 'callback', 'mlmenu');
     %%%%%
@@ -517,8 +511,8 @@ if isempty(mlf),
     
     uicontrol('style', 'pushbutton', 'position', [xbase+355 ybase+1 70 25], 'string', 'Check', 'tag', 'checkio', 'callback', 'mlmenu');
     
-    iolist = {'Eye Signal X' 'Eye Signal Y' 'Joystick X' 'Joystick Y' 'Reward' 'Behavioral Codes' 'Codes Strobe' 'Vertical Sync' 'PhotoDiode' 'Button 1' 'Button 2' 'Button 3' 'General Input 1' 'General Input 2' 'General Input 3' 'Stimulation 1' 'Stimulation 2' 'Stimulation 3' 'Stimulation 4' 'TTL 1' 'TTL 2' 'TTL 3' 'TTL 4', 'TTL 5', 'TTL 6'};
-    iovarnames = {'EyeX' 'EyeY' 'JoyX' 'JoyY' 'Reward' 'CodesDigOut' 'DigCodesStrobeBit' 'Vsync' 'PhotoDiode' 'Button1' 'Button2' 'Button3' 'Gen1' 'Gen2' 'Gen3' 'Stim1' 'Stim2' 'Stim3' 'Stim4' 'TTL1' 'TTL2' 'TTL3' 'TTL4' 'TTL5' 'TTL6'}';
+    iolist = {'Eye Signal X' 'Eye Signal Y' 'Joystick X' 'Joystick Y' 'Reward' 'Behavioral Codes' 'Codes Strobe' 'Vertical Sync' 'PhotoDiode' 'Button 1' 'Button 2' 'Button 3' 'Button 4' 'Button 5' 'General Input 1' 'General Input 2' 'General Input 3' 'Stimulation 1' 'Stimulation 2' 'Stimulation 3' 'Stimulation 4' 'TTL 1' 'TTL 2' 'TTL 3' 'TTL 4', 'TTL 5', 'TTL 6'};
+    iovarnames = {'EyeX' 'EyeY' 'JoyX' 'JoyY' 'Reward' 'CodesDigOut' 'DigCodesStrobeBit' 'Vsync' 'PhotoDiode' 'Button1' 'Button2' 'Button3' 'Button4' 'Button5' 'Gen1' 'Gen2' 'Gen3' 'Stim1' 'Stim2' 'Stim3' 'Stim4' 'TTL1' 'TTL2' 'TTL3' 'TTL4' 'TTL5' 'TTL6'}';
     for i = 1: length(iovarnames),
         InputOutput.(iovarnames{i}) = struct;
         InputOutput.(iovarnames{i}).Label = iolist{i};
@@ -1502,7 +1496,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                 mlmessage('');
                 return
             end
-            [~, fname, ext] = fileparts(fname);
+            [pname, fname, ext] = fileparts(fname);
             if strcmpi(ext, '.html') || strcmpi(ext, '.htm'),
                 set(gcbo, 'string', ['Web Template: ' fname], 'userdata', [pname fname ext]);
             else
@@ -1549,7 +1543,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                 mlmessage('');
                 return
             end
-            [~, fname, ext] = fileparts(fname); %eliminates '.m'
+            [pname, fname, ext] = fileparts(fname); %eliminates '.m'
             set(gcbo, 'string', fname, 'userdata', [pname fname ext]);
             mlmessage('>>> User-defined alert criteria function set <<<');
             set(findobj(gcf, 'tag', 'savebutton'), 'enable', 'on');
@@ -1988,6 +1982,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                     mlvideo('copybuffer', videodevice, buffer(i), testpattern);
                 end
                 mlmessage('Displaying test pattern...');
+                t1 = tic;
                 for j = 1:numcycles,
                     for i = 1:numcycles,
                         mlvideo('blit', videodevice, buffer(i));
@@ -1998,6 +1993,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                         mlvideo('flip', videodevice);
                     end
                 end
+                t2 = toc(t1);
                 for i = 1:numcycles,
                     mlvideo('releasebuffer', videodevice, buffer(i));
                 end
@@ -2005,7 +2001,9 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                 mlvideo('restoremode', videodevice);
                 mlvideo('releasedevice', videodevice);
                 mlvideo('release');
-                mlmessage('');
+                totalframes = 2*(numcycles^2);
+                framerate = 1/(t2/totalframes);
+                mlmessage(sprintf('Approximate video refresh rate = %3.2f Hz', framerate));
             catch
                 mlvideo('showcursor', videodevice, 1);
                 mlvideo('restoremode', videodevice);
@@ -2013,9 +2011,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                 mlvideo('release');
                 lasterr
                 mlmessage('*** Error encountered during application of selected video settings ***');
-            end
-            mlmessage('Done.');
-            mlmessage('');
+            end           
             
         case 'updateinterval',
             
@@ -2303,22 +2299,23 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                         
         case 'runbutton',
             
-            if get(findobj(gcf, 'tag', 'blocklogic'), 'value') == 5 && isempty(get(findobj(gcf, 'tag', 'blockselectfun'), 'userdata')),
+			if get(findobj(gcf, 'tag', 'blocklogic'), 'value') == 5 && isempty(get(findobj(gcf, 'tag', 'blockselectfun'), 'userdata')),
                mlmessage('Must specify a block-selection function for user-controlled block transitions');
                return
-            end
-            if get(findobj(gcf, 'tag', 'condlogic'), 'value') == 5 && isempty(get(findobj(gcf, 'tag', 'condselectfun'), 'userdata')),
+			end
+			if get(findobj(gcf, 'tag', 'condlogic'), 'value') == 5 && isempty(get(findobj(gcf, 'tag', 'condselectfun'), 'userdata')),
                 mlmessage('Must specify a condition-selection function for user-controlled conditions');
                 return
-            end
-            if usejava('jvm'),
+			end
+			if usejava('jvm'),
                 mlmessage('*** Must disable JAVA: Run "Matlab -nojvm" from the command prompt ***');
                 return
-            end
+			end
             
+			set(findobj(gcf, 'tag', 'runbutton'), 'enable', 'off');			%this is a fail-safe in the case that a user hits the run button twice
             set(gcbo, 'hittest', 'off');
             nullstr = get(findobj(gcf, 'tag', 'totalconds'), 'string');
-            if ~strcmp(nullstr, '--'),
+			if ~strcmp(nullstr, '--'),
                 savecfg;
                 set(findobj(gcf, 'tag', 'savebutton'), 'enable', 'off');
                 set(findobj(gcf, 'tag', 'menubar_savebutton'), 'enable', 'off');
@@ -2327,9 +2324,11 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                     a = questdlg('Overwrite existing data file?', 'Data file already exists');
                     if strcmpi(a, 'No'),
                         mlmessage('Enter a new data file name to run the task');
+						set(findobj(gcf, 'tag', 'runbutton'), 'enable', 'on');			%this is a fail-safe in the case that a user hits the run button twice
                         return
                     elseif strcmpi(a, 'Cancel'),
                         mlmessage('');
+						set(findobj(gcf, 'tag', 'runbutton'), 'enable', 'on');			%this is a fail-safe in the case that a user hits the run button twice
                         return
                     end
                 end
@@ -2338,7 +2337,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                 mlmessage('Running task...');
                 set(findobj(gcf, 'tag', 'loadbutton'), 'userdata', struct);
                 monkeylogic(condfile, datafile, testflag);
-            end
+			end
             set(gcbo, 'hittest', 'on');
             mlmessage('Done.');
 
@@ -2458,6 +2457,9 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                     TrialRecord.TrialErrors = [];
                     TrialRecord.ReactionTimes = [];
                     imdata = feval(ob.FunctionName, TrialRecord);
+					if ischar(imdata)
+						imdata = imread(imdata);
+					end
                     if (max(max(max(imdata)))) > 1,
                       imdata = imdata/255;
                     end
@@ -2635,7 +2637,8 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                 stop(StimAO); %in case was still running from a previous trial
                 putdata(StimAO, stimdata);
                 start(StimAO);
-                mlmessage(sprintf('>>> Analog output in progress on Stim%i <<<', ob.OutputPort));
+                mlmessage(sprintf('>>> Analog output in progress on Stim%i <<<', ob.OutputPort)); 
+                drawnow;
                 trigger(StimAO);
                 daqreset;
                 clear StimAO
@@ -2717,8 +2720,9 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
                         height    = get(reader, 'height');
                         width     = get(reader, 'width');
                         bpf       = height * width * bpp;
+                        MAX_BITS_PER_FILE = 40 *1000*1000;
                         maxframes = floor(MAX_BITS_PER_FILE / bpf);
-                        
+                                                
                         if maxframes >= numframes,
                             
                             processedfile = [pname filesep fname '_preprocessed.mat'];
@@ -2905,7 +2909,7 @@ elseif ismember(gcbo, get(findobj('tag', 'monkeylogicmainmenu'), 'children')) ||
             end
             
             % See if need to select lines as well as ports:
-            if (~isempty(strmatch('Button', iovar)) && strcmpi(AdaptorInfo(boardnum).SubSystemsNames(subsysnum), 'digitalio')) || ~isempty(strmatch('TTL', iovar)) || strcmp('DigCodesStrobeBit', iovar)  || strcmp('CodesDigOut', iovar),
+            if (strncmpi('Button', iovar, 6) && strcmpi(AdaptorInfo(boardnum).SubSystemsNames(subsysnum), 'digitalio')) || ~isempty(strmatch('TTL', iovar)) || strcmp('DigCodesStrobeBit', iovar)  || strcmp('CodesDigOut', iovar),
                 if ~strcmpi(AdaptorInfo(boardnum).SubSystemsNames(subsysnum), 'digitalio'),
                     mlmessage('*** TTLs and Digital Codes must be assigned to a digital output ***');
                     return
@@ -4182,3 +4186,33 @@ g=uint32(g);
 b=uint32(b);
 z = 65536*r+256*g+b;
 rgb = z(:)';
+
+function chknewupdates(lastupdate)
+
+checkinterval = 30; %in days
+if ~ispref('MonkeyLogic', 'LastUpdateCheck'),
+    lastchecknum = floor(now)-checkinterval-1;
+    setpref('MonkeyLogic', 'LastUpdateCheck', lastchecknum);
+end
+lastchecknum = getpref('MonkeyLogic', 'LastUpdateCheck');
+todaynum = floor(now);
+
+try
+    if todaynum > lastchecknum + checkinterval,
+        mmm = lastupdate(1:3);
+        yyyy = lastupdate(end-3:end);
+        currentversion = datenum([mmm yyyy], 'mmmyyyy');
+        str = urlread('http://www.monkeylogic.org/revisiondate.txt');
+        mmm = str(1:3);
+        yyyy = str(end-3:end);
+        latestversion = datenum([mmm yyyy], 'mmmyyyy');
+        if latestversion > currentversion,
+            msgbox(sprintf('New MonkeyLogic update available (%s) at www.monkeylogic.org', str));
+        end
+        setpref('MonkeyLogic', 'LastUpdateCheck', todaynum);
+    end
+catch ME %likely no network...
+    disp(sprintf('>>> Unable to check for MonkeyLogic updates (%s) <<<', ME.identifier))
+end
+
+

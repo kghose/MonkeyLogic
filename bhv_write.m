@@ -17,10 +17,13 @@ function status = bhv_write(mode, fidbhv, WriteData, varargin)
 % Modified 1/20/08 -WA
 % Modified 8/13/08 -WA (added movie images to file; v2.5)
 % Modified 8/31/08 -WA (handles option to NOT store PICs and MOVs to file)
+% Modified 7/27/12 -WA (Increases possible trial duration to 2^32)
+% Modified 7/16/13 -DF (New field: ActualVideoRefreshRate; v3.1)
 
 persistent numtrialpointer
 
 status = 0;
+bhvfileversion = 3.1;
 
 switch mode,
     case 1, %write header
@@ -34,7 +37,7 @@ switch mode,
 
         BHV.MagicNumber = 2837160;
         BHV.FileHeader = 'MonkeyLogic BHV File';
-        BHV.FileVersion = 2.72;
+        BHV.FileVersion = bhvfileversion;
         
         BHV.StartTime = datestr(now);
         BHV.ExperimentName = MLConfig.ExperimentName;
@@ -86,6 +89,7 @@ switch mode,
         BHV.BlockSelectFunction = MLConfig.BlockSelectFunction;
         BHV.CondSelectFunction = MLConfig.CondSelectFunction;
         BHV.VideoRefreshRate = MLConfig.RefreshRate;
+		BHV.ActualVideoRefreshRate = MLConfig.ActualRefreshRate;
         BHV.VideoBufferPages = MLConfig.BufferPages;
         BHV.ScreenXresolution = MLConfig.ScreenX;
         BHV.ScreenYresolution = MLConfig.ScreenY;
@@ -224,6 +228,7 @@ switch mode,
         fwritetext(fidbhv, BHV.BlockSelectFunction, 64);
         fwritetext(fidbhv, BHV.CondSelectFunction, 64);
         fwrite(fidbhv, BHV.VideoRefreshRate, 'double');
+		fwrite(fidbhv, BHV.ActualVideoRefreshRate, 'double');
         fwrite(fidbhv, BHV.VideoBufferPages, 'uint16');
         fwrite(fidbhv, BHV.ScreenXresolution, 'uint16');
         fwrite(fidbhv, BHV.ScreenYresolution, 'uint16');
@@ -303,7 +308,9 @@ switch mode,
         fwrite(fidbhv, round(WriteData.CycleRate), 'uint16');
         fwrite(fidbhv, WriteData.NumCodes, 'uint16');
         fwrite(fidbhv, WriteData.CodeNumbers{:}, 'uint16');
-        fwrite(fidbhv, WriteData.CodeTimes{:}, 'uint16');
+        %%%%% Version 3.0 (prior had been uint16)
+        fwrite(fidbhv, WriteData.CodeTimes{:}, 'uint32');
+        %%%%%
         if isempty(WriteData.EyeSignal),
             numxeyepoints = 0;
             numyeyepoints = 0;
@@ -515,6 +522,8 @@ switch mode,
         fseek(fidbhv, numtrialpointer, -1);
         fwrite(fidbhv, BHV.NumTrials, 'uint16');
         fseek(fidbhv, 0, 1);
+    case 4, %check for file version
+        status = bhvfileversion;
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -560,6 +569,7 @@ for cond = 1:length(Conditions),
         end
     end
 end
+
 if ~numpics,
     picnames = [];
     picsizes = [];

@@ -148,22 +148,12 @@ for i = 1:length(varargin),
             fval = cat(1, S(:).(fname));
             [b indx j] = unique(fval, 'rows');
         elseif isvector(sampleS),
-            pad = 0;
+			v = zeros(1, length(S));
             for k = 1:length(S),
-                pad = max(pad,length(S(k).(fname)));
+                v(k) = mean(S(k).(fname));
             end
-            for k = 1:length(S),
-                v = S(k).(fname);
-                v(end+1:pad) = NaN;
-                S(k).(fname) = v;
-            end
-            fval = cat(1, S(:).(fname));
+            fval = v';
             [b indx j] = unique(fval, 'rows');
-            for k = 1:length(S),
-                v = S(k).(fname);
-                v = v(~isnan(v));
-                S(k).(fname) = v;
-            end
         else
             maxsize = zeros(length(size(sampleS)));
             for k = 1:length(S),

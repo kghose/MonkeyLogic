@@ -4,6 +4,8 @@ function output = initcontrolscreen(procnum, ScreenInfo, varargin)
 % Modified 1/22/08 -WA
 % Modified 2/21/08 -WA (Added button/lever indicators & fixed scaling bug found by DJF)
 % Modified 9/11/08 -WA (fixed aspect ratio bug when using wide-screen monitors)
+% Modified 6/01/12 -WA (to show max latency, rather than min cycle rate)
+% Modified 7/19/12 -WA (to keep control-screen background black, regardless of subject screen bg color)
 
 persistent hxd hyd rtext wtext warnings user_text %screen dimension +/- hxd & hyd, in degrees
 
@@ -643,7 +645,7 @@ MLConfig.ControlScreenGridPolar = 1;
 MLConfig.ControlScreenGridPolarBrightness = 0.25;
 MLConfig.Priority = 1;
 initcontrolscreen(1, ScreenInfo, MLConfig);
-perf = [.5 .6 .2; 0 0 0; 0 0 0; .1 .1 .1; .05 .05 .05; .05 .05 .05; .3 .2 .6];
+perf = [.5 .6 .2 .5; 0 0 0 0; 0 0 0 0; .1 .1 .1 .1; .05 .05 .05 .05; .05 .05 .05 .05; .3 .2 .6 .3];
 initcontrolscreen(3, perf);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% SCREEN SPEED TEST

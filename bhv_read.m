@@ -25,6 +25,7 @@ function BHV = bhv_read(varargin)
 %   BHV.BlockSelectFunction        'uchar'  x 64
 %   BHV.CondSelectFunction         'uchar'  x 64
 %   BHV.VideoRefreshRate           'double' x 1
+%	BHV.ActualVideoRefreshRate	   'double' x 1
 %   BHV.VideoBufferPages           'uint16' x 1
 %   BHV.ScreenXresolution          'uint16' x 1
 %   BHV.ScreenYresolution          'uint16' x 1
@@ -60,7 +61,7 @@ function BHV = bhv_read(varargin)
 %       | BHV.CycleRate(trial)                   'uint16' x 1
 %       | BHV.NumCodes(trial)                    'uint16' x 1
 %       | BHV.CodeNumbers{trial}                 'uint16' x 1 x BHV.NumCodes
-%       | BHV.CodeTimes{trial}                   'uint16' x 1 x BHV.NumCodes
+%       | BHV.CodeTimes{trial}                   'uint32' x 1 x BHV.NumCodes
 %       | BHV.NumXEyePoints(trial)               'uint32' x 1
 %       | BHV.AnalogData{trial}.EyeSignal[x]     'float32' x BHV.NumXEyePoints
 %       | BHV.NumYEyePoints(trial)               'uint32' x 1
@@ -82,6 +83,7 @@ function BHV = bhv_read(varargin)
 % Created by WA 7/06
 % Modified 5/22/08 -WA (added BlockIndex)
 % Modified 8/13/08 -WA (added Movies)
+% Modified 7/25/12 -WA (lengthened maximum trial to 2^32 milliseconds)
 
 BHV = struct;
 if ~ispref('MonkeyLogic', 'Directories'),
@@ -126,10 +128,16 @@ if BHV.MagicNumber ~= 2837160,
     error('*** %s is not recognized as a "BHV" file ***', datafile);
 end
 BHV.FileHeader = deblank(char(fread(fidbhv, 64, 'uchar')'));
+
 BHV.FileVersion = fread(fidbhv, 1, 'double');
 if BHV.FileVersion < 1.5,
     error('*** BHV files of version < 1.5 are no longer supported ***');
 end
+writeversion = bhv_write(4, 0, 0); %check for the currently-installed version of "bhv_write" as an indicator if the file version being read may be incompatible
+if BHV.FileVersion > writeversion,
+    disp('>>> WARNING: BHV file being read may be newer and therefore incompatible with this version of "bhv_read" <<<')
+end
+
 BHV.StartTime = deblank(char(fread(fidbhv, 32, 'uchar')'));
 BHV.ExperimentName = deblank(char(fread(fidbhv, 128, 'uchar')'));
 if BHV.FileVersion > 1.5,
@@ -177,6 +185,9 @@ BHV.BlockSelectFunction = deblank(char(fread(fidbhv, 64, 'uchar')'));
 BHV.CondSelectFunction = deblank(char(fread(fidbhv, 64, 'uchar')'));
 if BHV.FileVersion > 2.0,
     BHV.VideoRefreshRate = fread(fidbhv, 1, 'double');
+	if BHV.FileVersion > 3.0
+		BHV.ActualVideoRefreshRate = fread(fidbhv, 1, 'double');
+	end
     BHV.VideoBufferPages = fread(fidbhv, 1, 'uint16');
 end
 BHV.ScreenXresolution = fread(fidbhv, 1, 'uint16');
@@ -298,15 +309,25 @@ for trial = 1:BHV.NumTrials,
     end
     BHV.ConditionNumber(trial, 1) = fread(fidbhv, 1, 'uint16');
     BHV.TrialError(trial, 1) = fread(fidbhv, 1, 'uint16');
-    if BHV.FileVersion >= 2.05,
+	if BHV.FileVersion >= 2.05,
         BHV.CycleRate(trial, 1) = fread(fidbhv, 1, 'uint16');
-        if BHV.FileVersion >= 2.72,
-            BHV.MinCycleRate(trial, 1) = fread(fidbhv, 1, 'uint16');
-        end
-    end
+		if BHV.FileVersion >= 2.72
+			if BHV.CycleRate(trial, 1) > 0
+				BHV.MinCycleRate(trial, 1) = fread(fidbhv, 1, 'uint16');
+			else
+				fprintf('Cycle rate on trial %i is 0.\n', trial);
+				BHV.MinCycleRate(trial, 1) = 0;
+			end
+		end
+	end
     BHV.NumCodes(trial, 1) = fread(fidbhv, 1, 'uint16');
     BHV.CodeNumbers{trial} = fread(fidbhv, BHV.NumCodes(trial), 'uint16');
-    BHV.CodeTimes{trial} = fread(fidbhv, BHV.NumCodes(trial), 'uint16');
+	if BHV.FileVersion >= 3.0,
+        BHV.CodeTimes{trial} = fread(fidbhv, BHV.NumCodes(trial), 'uint32');
+    else
+        BHV.CodeTimes{trial} = fread(fidbhv, BHV.NumCodes(trial), 'uint16');
+	end
+
     if BHV.FileVersion >= 1.5,
         BHV.NumXEyePoints = fread(fidbhv, 1, 'uint32');
         if BHV.NumXEyePoints > 0,
@@ -323,7 +344,7 @@ for trial = 1:BHV.NumTrials,
             else
                 yeye = fread(fidbhv, BHV.NumYEyePoints, 'double');
             end
-        end
+		end
         if BHV.NumXEyePoints == BHV.NumYEyePoints && BHV.NumXEyePoints > 0,
             BHV.AnalogData{trial}.EyeSignal = [xeye yeye];
         elseif BHV.NumXEyePoints > BHV.NumYEyePoints, %only recorded one of the two

@@ -1,103 +1,184 @@
-function textline = generate_condition(cond_number, varargin)
+function textline = generate_condition(varargin)
 %SYNTAX:
-%        textline = generate_condition(cond_number, relative_frequency, cond_in_block, timing_file, TaskObject, [fid])
+%        textline = generate_condition(parameter, value)
 %
-% Where cond_number is the condition number, cond_in_block is the array of
-% block numbers in which that condition can occur, timing_file is the
-% string containing the name of the timing script, and TaskObject is a
-% structure with fields:
+% This function generates a line of the conditions file text-file according
+% to parameter/value pairs provided to it.  The possible parameters are:
 %
-%   TaskObject(n).Type
-%   TaskObject(n).Arg{k}
+%   PARAMETER:          EXPECTED VALUE:
 %
-% in which n is the TaskObject number and the field Arg is a cell array containing
-% each of the arguments for the indicated TaskObject type.
+%   'Condition'         condition number (scalar integer)
 %
-% The optional input argument, fid, can specify the FID of the text file to which 
-% this condition should be written.
+%   'Block'             block or blocks in which this condition can occur
+%                       (scalar or vector of integers)
 %
-% Alternatively, the syntax:
+%   'Frequency'         relative likelihood this condition might be
+%                       selected at random (baseline frequency = 1)
+%                       (positive scalar)
 %
-%       textline = generate_condition('header', [fid])
+%   'TimingFile'        name of timing file to be run with this condition
+%                       (string)
 %
-% can be used to generate a conditions file header.
+%   'Info'              User info for this condition
+%                       (structure, to be converted to parameter-value pairs)
 %
-% The output, textline, is the text as it is to be printed to the conditions file.
+%   'TaskObject'        TaskObject information (structure) as:
+%
+%                           TaskObject(n).Type
+%                           TaskObject(n).Arg{k}
+%
+%                       in which n is the TaskObject number and the field Arg 
+%                       is a cell array containing each of the arguments for the 
+%                       indicated TaskObject type.
+%
+%   'Header'            will cause this function to return a header; value
+%                       to specify here is the number of TaskObject labels
+%                       to generate. Note that only a header-line will be returned
+%                       if this parameter is specified, regardless of any other 
+%                       provided parameter / value pairs.  (scalar)
+%
+%   'FID'               If this is specified, the condition line text will
+%                       be printed to the file specified by this File-ID.
+%
 %
 % Created by WA 9/3/06
 % Last modified 9/11/06 -WA
+% Major re-write 7/26/12 -WA
 
-textline = '';
+numpairs = length(varargin)/2;
+if numpairs ~= round(numpairs),
+    error('Arguments to "generate_condition" must come in parameter / value pairs');
+end
+
+params = {'FID' 'Header' 'Condition' 'Block' 'Frequency' 'TimingFile' 'Info' 'TaskObject'};
 
 fid = [];
-if ~isempty(varargin),
-    fid = varargin{1};
-end
+cond_number = 1;
+relative_frequency = 1;
+timing_file = 'timingfile';
+itxt = '';
+cinb = 1;
+TOstring = {'fix(0,0)'};
 
-if strcmpi(cond_number, 'header'),
-    txtline = 'Condition\tFrequency\tBlock\t\tTiming File\t\tTaskObject#1\t\t\tTaskObject#2\t\t\tTaskObject#3\t\t\tTaskObject#4\t\t\tTaskObject#5\t\t\tTaskObject#6\t\t\tTaskObject#7\t\t\tTaskObject#8\t\t\tTaskObject#9\r\n';
-    textline = sprintf(txtline);
-    if ~isempty(fid),
-        fprintf(fid, txtline);
+for pnum = 1:numpairs,
+    pstring = varargin{(2*pnum)-1};
+    pmatch = strcmpi(pstring, params);
+    if ~any(pmatch),
+        error('Unrecognized "generate_condition" parameter %s', pstring);
     end
-    return
-end
-
-relative_frequency = varargin{1};
-cond_in_block = varargin{2};
-timing_file = varargin{3};
-TaskObject = varargin{4};
-if length(varargin) > 4,
-    fid = varargin{5};
-else
-    fid = [];
-end
-
-fn = fieldnames(TaskObject);
-numfields = length(fn);
-ftype = find(strcmp(fn, 'Type'));
-if isempty(ftype) || length(ftype) > 1,
-    error('Must have one field called TaskObject.Type');
-    return
-end
-farg = find(strmatch('Arg', fn));
-if isempty(farg) || (length(farg)+1) ~= numfields,
-    error('Only allowed fields for TaskObject are "Type" and "Arg"');
-    return
-end
-
-for i = 1:length(TaskObject),
-    numargs = length(TaskObject(i).Arg);
-    for j = 1:numargs,
-        if j == numargs,
-            txtsep = ')';
-        else
-            txtsep = ',';
+    pindx = find(pmatch);
+    pval = varargin{2*pnum};
+    if pindx == 1, %FID
+        fid = pval;
+    elseif pindx == 2, %Header
+		if numpairs > 2
+			error('Only expect two parameters when the ''header'' parameter is specified: the ''header'' parameter, and the ''fid'' parameter.');
+		end
+        numTO = pval;
+        textline = sprintf('Condition\tInfo\tFrequency\tBlock\tTiming File');
+		for i = 1:numTO,
+            textline = sprintf('%s\tTaskObject#%i', textline, i);
+		end
+		if isempty(fid),
+			try
+				pstring = varargin{2 * pnum + 1};
+			catch ME
+				fprintf('Error thrown by matlab: %s', ME.message);
+				error('''FID'' parameter not specified with ''Header'' parameter.');
+			end
+			if find(strcmpi(pstring, params)) ~= 1					%check if next parameter is the fid. If not, throw error.
+				error('Parameter following the ''Header'' parameter must be the ''FID'' parameter');
+			else													%If it is, then read in fid
+				fid = varargin{2 * pnum + 2};
+			end
+		end
+		fprintf(fid, textline);										%So now we have the file id, we can print to it and return.
+		return
+    elseif pindx == 3, %Condition
+        cond_number = pval;
+    elseif pindx == 4, %Block
+        cinb = pval;
+        [h w] = size(cinb);
+        if h > w,
+            cinb = cinb';
         end
-        thisarg = TaskObject(i).Arg{j};
-        if ischar(thisarg),
-            txt{j} = sprintf('%s%s', thisarg, txtsep);
-        elseif length(thisarg) > 1,
-            txt{j} = ['[' sprintf('%3.3f ', thisarg) ']' txtsep];
-        else
-            txt{j} = sprintf('%3.3f%s', thisarg, txtsep);
+    elseif pindx == 5, %Frequency
+        relative_frequency = pval;
+        if relative_frequency < 0,
+            error('Relative_frequency must be >= 0');
         end
+    elseif pindx == 6, %TimingFile
+        timing_file = pval;
+    elseif pindx == 7, %Info
+        cinfo = pval;
+        if ~isstruct(cinfo),
+            error('Info field must be provided as a structure.');
+        end
+        fn = fieldnames(cinfo);
+        n = length(fn);
+        itxt = '';
+        for i = 1:n,
+            str1 = fn{i};
+            val = cinfo.(str1);
+            if ischar(val),
+                str2 = sprintf('''%s''', val);
+            else
+                str2 = sprintf('%1.2f ', val); %may be vector, so can't include brackets
+                str2 = ['[' str2 ']'];
+            end
+            if i < n,
+                postcomma = ',';
+            else
+                postcomma = '';
+            end
+            itxt = sprintf('%s''%s'', %s%s ', itxt, str1, str2, postcomma);
+        end
+        
+    elseif pindx == 8, %TaskObject
+        TaskObject = pval;
+        if ~isstruct(TaskObject),
+            error('TaskObject must be provided as a structure.');
+        end
+        fn = fieldnames(TaskObject);
+        numfields = length(fn);
+        ftype = find(strcmpi(fn, 'Type'), 1);
+        farg = find(strcmpi('Arg', fn), 1);        
+        if isempty(ftype) || isempty(farg) || numfields ~= 2,
+            error('"generate_condition" requires two and only two fields for TaskObject: "Type" and "Arg"');
+        end
+        for i = 1:length(TaskObject),
+            numargs = length(TaskObject(i).Arg);
+            txt = {};
+            for j = 1:numargs,
+                if j == numargs,
+                    txtsep = ')';
+                else
+                    txtsep = ',';
+                end
+                thisarg = TaskObject(i).Arg{j};
+                if ischar(thisarg),
+                    txt{j} = sprintf('%s%s', thisarg, txtsep);
+                elseif length(thisarg) > 1,
+                    txt{j} = ['[' sprintf('%3.3f ', thisarg) ']' txtsep];
+                else
+                    txt{j} = sprintf('%3.3f%s', thisarg, txtsep);
+                end
+            end
+            TOstring{i} = sprintf('%s(%s', TaskObject(i).Type, strcat(txt{:}));
+            TOstring{i} = strcat(TOstring{i}, '\t');
+        end
+    else
+        error('Unrecognized parameter for "generate_condition"');
     end
-    TOstring{i} = sprintf('%s(%s', TaskObject(i).Type, strcat(txt{:}));
-    TOstring{i} = strcat(TOstring{i}, '\t\t');
 end
 
-cinb = cond_in_block;
-[h w] = size(cinb);
-if h > w,
-    cinb = cinb';
-end
+
 rf = sprintf('%i ', relative_frequency);
 cinb = sprintf('%i ', cinb);
-txtstr = strcat('%i\t\t%s\t\t%s\t\t%s\t\t', strcat(TOstring{:}), '\r\n');
-textline = sprintf(txtstr, cond_number, rf, cinb, timing_file);
+txtstr = strcat('%i\t%s\t%s\t%s\t%s\t', strcat(TOstring{:}), '\r\n');
+textline = sprintf(txtstr, cond_number, itxt, rf, cinb, timing_file);
 
 if ~isempty(fid),
-    fprintf(fid, txtstr, cond_number, rf, cinb, timing_file);
+    fprintf(fid, txtstr, cond_number, itxt, rf, cinb, timing_file);
 end
 

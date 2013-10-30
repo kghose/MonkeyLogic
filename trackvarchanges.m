@@ -1,10 +1,16 @@
 function varargout = trackvarchanges(trial)
 %tracks changes made to "editable" variables for storage in the BHV data file
+%modified 2/4/13 - DF (to fix editable variables bug)
 persistent VarChanges
     
 if trial == -1,
     varargout{1} = VarChanges;
     return
+end
+
+if trial == -2			%This tells monkeylogic to clear VarChanges. Usually called when an experiment is aborted or at the end of an experiment.
+	clear VarChanges;
+	return
 end
 
 VV = get(findobj('tag', 'loadbutton'), 'userdata');
